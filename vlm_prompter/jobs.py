@@ -46,6 +46,9 @@ def resolve_model(client: LMStudioClient, model: str) -> Tuple[str, str, bool]:
     if model == USE_LOADED:
         loaded = client.loaded_models()
         if not loaded:
+            from .render import reload_swapped        # the renderer unloaded it for the GPU - bring it back
+            if reload_swapped(client):
+                return resolve_model(client, model)
             raise LMStudioError("Nothing is loaded in LM Studio - load a model there, or pick one in the list.")
         pick = next((m for m in loaded if m.vision), loaded[0])
         return pick.identifier or pick.id, pick.path, True

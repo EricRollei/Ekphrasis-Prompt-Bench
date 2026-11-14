@@ -13,3 +13,6 @@ private_docs/
 prompt_lists/
 wildcards/
 settings.json.tmp
+workflows/
+render_presets/
+renders/

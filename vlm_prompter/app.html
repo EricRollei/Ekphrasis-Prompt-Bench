@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VLM Prompter</title>
+<title>Ekphrasis Prompt Bench</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232f5d8a'/%3E%3Ctext x='8' y='12' font-size='10' text-anchor='middle' fill='white' font-family='sans-serif'%3EP%3C/text%3E%3C/svg%3E">
 <style>
 :root {
@@ -236,11 +236,21 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
 .rwbadge { display:inline-block; font-size:11px; padding:0 6px; border-radius:8px; background:var(--warn); color:#fff; margin-right:3px; }
 .rwdiff { font-size:12.5px; line-height:1.5; margin-top:6px; padding:6px; background:var(--soft); border-radius:6px; }
 .rwdiff del { color:var(--bad); text-decoration:line-through; } .rwdiff ins { color:var(--good); text-decoration:none; font-weight:600; }
+
+.rbar { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:3px 0 6px; }
+.rbtn { font-size:11.5px; padding:1px 8px; }
+.rstrip { display:flex; gap:4px; flex-wrap:wrap; }
+.rstrip img { width:84px; height:84px; object-fit:cover; border-radius:5px; border:1px solid var(--line); }
+#settings { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:flex-start; justify-content:center; z-index:50; overflow:auto; padding:30px 10px; }
+#settings .box { background:var(--bg); border:1px solid var(--line); border-radius:10px; width:min(860px, 96vw); padding:14px 18px 20px; }
+#settings h3 { margin:16px 0 6px; font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+.setrow { display:grid; grid-template-columns:200px 1fr; gap:10px; align-items:center; margin:4px 0; font-size:13px; }
+.setrow input[type=text], .setrow select { width:100%; }
 </style>
 </head>
 <body>
 <header>
-  <h1>VLM Prompter</h1>
+  <h1>Ekphrasis Prompt Bench</h1>
   <div class="modes"><button data-mode="generate" class="on">Generate</button><button data-mode="photobash">Photobash</button><button data-mode="ideas">Ideas</button><button data-mode="rewrite">Rewrite</button><button data-mode="review">Review</button></div>
   <select id="model" title="Which LM Studio model writes the prompts (● = loaded now)"></select>
   <button id="fav" title="Mark this model as a favourite">☆</button>
@@ -253,7 +263,7 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
   <span class="muted" style="margin-left:10px">Thinking</span>
   <select id="mode" title="Reasoning mode - the choices come from this model's own chat template"></select>
   <span class="muted" style="margin-left:10px">Preset</span>
-  <select id="preset" title="What kind of prompt to write"></select><label title="LoRA trigger word: put at the very front of every prompt, ended with a period (e.g. 'ohwx woman. A woman stands ...'). Applied in every mode; JSON presets are left alone." style="margin-left:6px">trigger <input type="text" id="trigger" placeholder="none" style="width:110px"></label><span id="lyBox" style="display:none" title="Layout presets: boxes are converted to pixels for this canvas - render at the size shown with each result">canvas <select id="lyAspect"><option value="source">source aspect</option><option>1:1</option><option>4:3</option><option>3:2</option><option>16:9</option><option>21:9</option><option>3:4</option><option>2:3</option><option>9:16</option></select> <input type="number" id="lyMP" value="1.0" min="0.25" max="4" step="0.25" style="width:56px"> MP</span>
+  <select id="preset" title="What kind of prompt to write"></select><label title="Render preset: what &#9654; render uses (ComfyUI workflow, images per click, seed). Make one in Settings." style="margin-left:6px">render <select id="rPreset"></select></label><span class="muted" id="rState" style="font-size:12px;margin-left:4px"></span><button id="rBtnSettings" title="Settings: folders, ComfyUI, workflows, render presets" style="margin-left:6px">&#9881; Settings</button><label title="LoRA trigger word: put at the very front of every prompt, ended with a period (e.g. 'ohwx woman. A woman stands ...'). Applied in every mode; JSON presets are left alone." style="margin-left:6px">trigger <input type="text" id="trigger" placeholder="none" style="width:110px"></label><span id="lyBox" style="display:none" title="Layout presets: boxes are converted to pixels for this canvas - render at the size shown with each result">canvas <select id="lyAspect"><option value="source">source aspect</option><option>1:1</option><option>4:3</option><option>3:2</option><option>16:9</option><option>21:9</option><option>3:4</option><option>2:3</option><option>9:16</option></select> <input type="number" id="lyMP" value="1.0" min="0.25" max="4" step="0.25" style="width:56px"> MP</span>
 </header>
 
 <div class="layout">
@@ -359,6 +369,7 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
       <div class="pbres" id="rwResults"></div>
       <div class="pbsave">
         <input type="text" id="rwName" placeholder="rewrite_<date> (in the prompt lists folder)" style="flex:1">
+        <button data-rall="rw" title="Render every ticked rewrite with the render preset">&#9654; render ticked</button>
         <button id="rwSaveKept">Save ticked</button><button id="rwSaveAll">Save all</button>
       </div>
     </div>
@@ -395,7 +406,7 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
       <div class="pbres" id="idResults"></div>
       <div class="pbsave">
         <input type="text" id="idName" placeholder="ideas_<date> (in the prompt lists folder)" style="flex:1">
-        <button id="idToRw" title="Send the ticked ideas to the Rewrite tab">→ Rewrite</button>
+        <button data-rall="id" title="Render every ticked idea with the render preset">&#9654; render ticked</button><button id="idToRw" title="Send the ticked ideas to the Rewrite tab">→ Rewrite</button>
         <button id="idSaveKept">Save ticked</button><button id="idSaveAll">Save all</button>
       </div>
     </div>
@@ -435,7 +446,7 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
     <div class="pbres" id="pbResults"></div>
     <div class="pbsave">
       <input type="text" id="pbName" placeholder="photobash_<date> (in the prompt lists folder)" style="flex:1">
-      <button id="pbToRw" title="Send the ticked mixes to the Rewrite tab">→ Rewrite</button>
+      <button data-rall="pb" title="Render every ticked mix with the render preset">&#9654; render ticked</button><button id="pbToRw" title="Send the ticked mixes to the Rewrite tab">→ Rewrite</button>
       <button id="pbSaveKept" title="Save the ticked mixes as one prompt list (one per line) with a .meta.jsonl">Save ticked</button>
       <button id="pbSaveAll">Save all</button>
     </div>
@@ -819,7 +830,7 @@ function renderQueue() {
         <span class="nm" title="${esc(it.image)}">${esc(base(it.image))}</span>
         ${flags ? `<div class="flags">${flags}</div>` : ""}
         <input class="note" type="text" data-act="note" value="${esc(it.note || "")}" placeholder="extra instruction for this image only (optional)">
-        ${(it.prompts || []).map((p, k2) => `<textarea class="p" data-act="prompt" data-k="${k2}">${esc(p)}</textarea>`).join("")}
+        ${(it.prompts || []).map((p, k2) => `<textarea class="p" data-act="prompt" data-k="${k2}">${esc(p)}</textarea>${rbar()}`).join("")}
         ${it.error ? `<div class="stats" style="color:var(--bad)">${esc(it.error)}</div>` : ""}
         <div class="stats">${esc(statsLine(it))}</div>
         ${it.meta ? `<div class="stats" title="${esc(it.meta.model)}">${esc(metaLine(it))}</div>` : ""}
@@ -1429,6 +1440,131 @@ async function rvRefreshChecks() {
   const by = new Map(d.cells.map(c => [c.file, c.check]));
   R.data.cells.forEach((c, i) => { const n = by.get(c.file); if (JSON.stringify(n) !== JSON.stringify(c.check)) { c.check = n; rvUpdateCard(i); if (i === R.cur) rvRenderDetail(); } });
 }
+// ---------------------------------------------------------------- Render (ComfyUI) + Settings page
+const RN = {presets: [], workflows: [], strips: {}, polling: false, since: 0};
+const rbar = () => `<div class="rbar"><button class="rbtn" title="Render this prompt with the render preset chosen at the top (ComfyUI)">&#9654; render</button><span class="rstrip"></span></div>`;
+const normText = t => (t || "").split(/\s+/).filter(Boolean).join(" ");
+function rbarText(bar) { const el = bar.previousElementSibling; return el ? (el.tagName === "TEXTAREA" ? el.value : el.innerText) : ""; }
+function rnThumb(r) { return `<a href="/thumb?side=2400&path=${encodeURIComponent(r.path)}" target="_blank" title="seed ${r.seed} - ${esc(r.preset)} - ${esc(r.made)}"><img src="${thumb(r.path, 220)}" alt=""></a>`; }
+function rnPaint() {                                  // fill every visible strip from RN.strips (keyed by normalised text)
+  document.querySelectorAll(".rbar").forEach(bar => {
+    const list = RN.strips[normText(rbarText(bar))] || [];
+    const s = bar.querySelector(".rstrip"); const html = list.slice().reverse().map(rnThumb).join("");
+    if (s.dataset.n !== String(list.length)) { s.innerHTML = html; s.dataset.n = String(list.length); }
+  });
+}
+let rnRefreshTimer = null;
+function rnRefresh() { if (rnRefreshTimer) return; rnRefreshTimer = setTimeout(async () => { rnRefreshTimer = null;   // throttle, not debounce: status lines change all the time
+  const texts = [...new Set([...document.querySelectorAll(".rbar")].map(b => normText(rbarText(b))).filter(Boolean))];
+  if (!texts.length) return;
+  try { const d = await api("/api/render/for_many", {texts}); Object.assign(RN.strips, d.by_text || {}); rnPaint(); } catch {}
+}, 400); }
+async function rnLoadState() {
+  const d = await api("/api/render/state");
+  RN.presets = d.presets; RN.workflows = d.workflows;
+  $("#rPreset").innerHTML = RN.presets.length ? RN.presets.map(p => `<option>${esc(p.name)}</option>`).join("") : '<option value="">no render preset - open Settings</option>';
+  if (d.current && RN.presets.some(p => p.name === d.current)) $("#rPreset").value = d.current;
+  if (d.job && d.job.running) rnPoll();
+}
+async function rnStart(items) {
+  if (!$("#rPreset").value) { rnOpenSettings(); return toast("make a render preset first (Settings > Render presets)"); }
+  const lp = (S.presets || []).find(x => x.id === $("#preset").value);
+  await api("/api/render/start", {preset: $("#rPreset").value, items: items.map(t => ({text: t}))});
+  rnPoll();
+}
+async function rnPoll() {
+  if (RN.polling) return; RN.polling = true; RN.since = 0;
+  try {
+    while (true) {
+      const s = await api(`/api/render/status?since=${RN.since}`);
+      s.results.forEach(r => { const k = normText(r.prompt); (RN.strips[k] = RN.strips[k] || []).push(r); });
+      RN.since += s.results.length; if (s.results.length) rnPaint();
+      $("#rState").textContent = s.running ? `${s.phase || ""} ${s.done || 0}/${s.total || 0}` : (s.total ? `rendered ${s.done}/${s.total}${s.errors ? `, ${s.errors} errors` : ""}` : "");
+      $("#rState").title = s.last_error || ""; if (!s.running && s.last_error) toast(s.last_error, 9000);
+      if (!s.running) break;
+      await new Promise(r => setTimeout(r, 1500));
+    }
+  } catch (e) { fail(e); }
+  RN.polling = false;
+}
+// ---- settings page
+async function rnOpenSettings() {
+  const st = await api("/api/settings/all"); await rnLoadState();
+  const wfOpts = RN.workflows.map(w => `<option>${esc(w.name)}</option>`).join("");
+  $("#setBody").innerHTML = `
+    <h3>Folders</h3>
+    ${[["group_dir", "prompt lists"], ["wildcards_dir", "wildcards (.txt files)"], ["sweeps_dir", "sweeps to review (ComfyUI output/sweeps)"], ["lmstudio_models_dir", "LM Studio models folder"]].map(([k, l]) =>
+      `<label class="setrow"><span>${l}</span><input type="text" data-set="${k}" value="${esc(st[k] || "")}"></label>`).join("")}
+    <h3>ComfyUI</h3>
+    <label class="setrow"><span>address</span><input type="text" data-set="comfyui_url" value="${esc(st.comfyui_url || "")}"></label>
+    <label class="setrow"><span>GPU sharing</span><select data-set="render_gpu"><option value="shared" ${st.render_gpu !== "separate" ? "selected" : ""}>one GPU - unload the LM Studio model while rendering (reloaded for the next prompt job)</option><option value="separate" ${st.render_gpu === "separate" ? "selected" : ""}>separate GPUs - render while prompts are written</option></select></label>
+    <label class="setrow"><span></span><span><input type="checkbox" data-set="render_free_after" ${st.render_free_after !== false ? "checked" : ""}> one GPU: ask ComfyUI to free its VRAM after a render batch</span></label>
+    <div><button class="primary" id="setSave">Save settings</button></div>
+    <h3>Workflows</h3>
+    <div class="muted" style="font-size:12.5px">Run a workflow once in ComfyUI, then save that run here. Its fields are mapped automatically where possible - check them below.</div>
+    <div class="setrow"><span>save my last ComfyUI run as</span><span><input type="text" id="wfName" placeholder="workflow name"> <button id="wfSave">Save</button></span></div>
+    <div class="setrow"><span>mapping for</span><span><select id="wfPick">${wfOpts}</select></span></div>
+    <div id="wfMap"></div>
+    <h3>Render presets</h3>
+    <div class="muted" style="font-size:12.5px">Choose a preset in the top bar; every &#9654; render uses it.</div>
+    <div class="setrow"><span>preset</span><span><select id="rpPick"><option value="">(new)</option>${RN.presets.map(p => `<option>${esc(p.name)}</option>`).join("")}</select></span></div>
+    <div id="rpForm"></div>`;
+  $("#settings").style.display = "flex";
+  $("#setSave").onclick = async () => {
+    const body = {}; document.querySelectorAll("#setBody [data-set]").forEach(el => body[el.dataset.set] = el.type === "checkbox" ? el.checked : el.value.trim());
+    await api("/api/settings", body); toast("settings saved");
+  };
+  $("#wfSave").onclick = async () => { const n = $("#wfName").value.trim(); if (!n) return toast("give the workflow a name");
+    const d = await api("/api/render/fromlast", {name: n}); toast(`saved ${d.name} (${d.nodes} nodes)`); rnOpenSettings(); };
+  $("#wfPick").onchange = rnShowMap; rnShowMap();
+  $("#rpPick").onchange = rnShowPreset; rnShowPreset();
+}
+async function rnShowMap() {
+  const n = $("#wfPick").value; if (!n) { $("#wfMap").innerHTML = '<div class="muted">no workflows yet</div>'; return; }
+  const d = await api(`/api/render/fields?name=${encodeURIComponent(n)}`);
+  const opt = (role, kind) => `<select data-role="${role}"><option value="">(none)</option>${d.fields.filter(f => f.kind === kind).map(f => {
+    const v = f.node + "|" + f.input, cur = (d.mapping[role] || []).join("|");
+    return `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(f.node)} ${esc(f.title)} . ${esc(f.input)} = ${esc(String(f.value).slice(0, 40))}</option>`; }).join("")}</select>`;
+  $("#wfMap").innerHTML = [["prompt", "text"], ["negative", "text"], ["seed", "number"], ["width", "number"], ["height", "number"]].map(([r, k]) =>
+    `<label class="setrow"><span>${r}${r === "prompt" ? " (required)" : ""}</span>${opt(r, k)}</label>`).join("") + '<div><button id="wfMapSave">Save mapping</button></div>';
+  $("#wfMapSave").onclick = async () => { const m = {}; document.querySelectorAll("#wfMap [data-role]").forEach(s => { if (s.value) m[s.dataset.role] = s.value.split("|"); });
+    await api("/api/render/map", {name: n, mapping: m}); toast("mapping saved"); };
+}
+function rnShowPreset() {
+  const p = RN.presets.find(x => x.name === $("#rpPick").value) || {name: "", workflow: (RN.workflows[0] || {}).name || "", batch: 1, seed_mode: "random", seed: 0, width: 0, height: 0, negative: ""};
+  $("#rpForm").innerHTML = `
+    <label class="setrow"><span>name</span><input type="text" id="rpName" value="${esc(p.name)}"></label>
+    <label class="setrow"><span>workflow</span><select id="rpWf">${RN.workflows.map(w => `<option ${w.name === p.workflow ? "selected" : ""}>${esc(w.name)}</option>`).join("")}</select></label>
+    <label class="setrow"><span>images per click</span><input type="number" id="rpBatch" min="1" max="8" value="${p.batch}" style="width:70px"></label>
+    <label class="setrow"><span>seed</span><span><select id="rpSeedMode"><option value="random" ${p.seed_mode !== "fixed" ? "selected" : ""}>random each time</option><option value="fixed" ${p.seed_mode === "fixed" ? "selected" : ""}>fixed (compare prompt edits fairly)</option></select> <input type="number" id="rpSeed" value="${p.seed}" style="width:140px"></span></label>
+    <label class="setrow"><span>size (0 = workflow's own)</span><span><input type="number" id="rpW" value="${p.width}" style="width:80px"> x <input type="number" id="rpH" value="${p.height}" style="width:80px"></span></label>
+    <label class="setrow"><span>negative (optional)</span><input type="text" id="rpNeg" value="${esc(p.negative || "")}" placeholder="empty = the workflow's own"></label>
+    <div><button class="primary" id="rpSave">Save preset</button></div>`;
+  $("#rpSave").onclick = async () => {
+    const d = await api("/api/render/preset", {name: $("#rpName").value.trim(), workflow: $("#rpWf").value, batch: +$("#rpBatch").value || 1,
+      seed_mode: $("#rpSeedMode").value, seed: +$("#rpSeed").value || 0, width: +$("#rpW").value || 0, height: +$("#rpH").value || 0, negative: $("#rpNeg").value.trim()});
+    toast("render preset saved: " + d.name); await rnLoadState(); $("#rPreset").value = d.name; rnOpenSettings();
+  };
+}
+function rnWire() {
+  rnLoadState().catch(() => {});
+  $("#rBtnSettings").onclick = () => rnOpenSettings().catch(fail);
+  document.addEventListener("click", e => {          // the Settings overlay sits after this script in the page
+    if (e.target.id === "setClose" || e.target.id === "settings") $("#settings").style.display = "none"; });
+  document.addEventListener("click", e => {
+    const b = e.target.closest(".rbtn"); if (!b) return;
+    const t = normText(rbarText(b.closest(".rbar"))); if (!t) return toast("empty prompt");
+    rnStart([t]).catch(fail);
+  });
+  document.addEventListener("click", e => {
+    const b = e.target.closest("[data-rall]"); if (!b) return;
+    const list = {pb: PB.results, id: ID.results, rw: RW.results}[b.dataset.rall].filter(r => r.keep).map(r => normText(r.prompt));
+    if (!list.length) return toast("tick some results first");
+    if (list.length > 3 && !confirm(`Render ${list.length} prompts with "${$("#rPreset").value}"?`)) return;
+    rnStart(list).catch(fail);
+  });
+  new MutationObserver(() => rnRefresh()).observe(document.body, {childList: true, subtree: true});
+}
 // ---------------------------------------------------------------- results lists that survive a reload
 function resKeep(key, list) { try { localStorage.setItem("vlmp.res." + key, JSON.stringify(list.slice(-400))); } catch {} }
 function resLoad(key) { try { return JSON.parse(localStorage.getItem("vlmp.res." + key) || "[]"); } catch { return []; } }
@@ -1477,7 +1613,7 @@ function rwCard(r) {
       ${r.image ? `<img src="${thumb(r.image, 80)}" style="width:28px;height:28px;object-fit:cover;border-radius:4px" alt="">` : ""}
       <span style="flex:1">${r.flags.map(f => `<span class="rwbadge">${esc(f)}</span>`).join(" ")}</span>
       <button data-rdiff="${r.n}" title="Show what changed">diff</button><button data-rcopy="${r.n}">copy</button></div>
-    <div class="pbtext" contenteditable="true" data-redit="${r.n}">${esc(r.prompt)}</div>
+    <div class="pbtext" contenteditable="true" data-redit="${r.n}">${esc(r.prompt)}</div>${rbar()}
     <div class="rwdiff" id="rwd${r.n}" style="display:none"></div></div>`;
 }
 function rwRenderResults() {
@@ -1564,7 +1700,7 @@ function idCard(r) {
   const extra = r.roll ? Object.entries(r.roll).map(([k, v]) => `${k}: ${v}`).join(" · ") : (r.filled && r.filled !== r.prompt ? "from: " + r.filled : "");
   return `<div class="pbr"><div class="pbrh"><label><input type="checkbox" data-ikeep="${r.n}" ${r.keep ? "checked" : ""}> idea ${r.n}</label>
     <span class="muted" style="flex:1">${esc(extra)}</span><button data-icopy="${r.n}">copy</button></div>
-    <div class="pbtext" contenteditable="true" data-iedit="${r.n}">${esc(r.prompt)}</div></div>`;
+    <div class="pbtext" contenteditable="true" data-iedit="${r.n}">${esc(r.prompt)}</div>${rbar()}</div>`;
 }
 async function idRun() {
   const st = await api("/api/ideas/status?since=0");
@@ -1659,7 +1795,7 @@ function pbRenderResults(append) {
         <span class="pbsrc">${r.images.map((p, i) => `<img src="${thumb(p, 120)}" title="${esc(p)} - weight ${r.weights[i]}" alt="">`).join("")}</span>
         <span class="muted">${esc(r.mode)}${Object.keys(r.assignment || {}).length ? " · " + Object.entries(r.assignment).map(([f, n]) => `${f}:${n}`).join(" ") : ""}</span>
         <button data-copy="${r.n}" title="Copy the prompt">copy</button></div>
-      <div class="pbtext" contenteditable="true" data-edit="${r.n}">${esc(r.prompt)}</div></div>`;
+      <div class="pbtext" contenteditable="true" data-edit="${r.n}">${esc(r.prompt)}</div>${rbar()}</div>`;
   if (!append) $("#pbResults").innerHTML = "";
   (append || PB.results).forEach(r => $("#pbResults").insertAdjacentHTML("beforeend", html(r)));
 }
@@ -1798,7 +1934,7 @@ function rvWire() {
   for (const k of ["mImage", "mCaption", "mFolder", "mCombined", "autoSave", "dedupe", "sidecar", "recursive", "onlyNew", "useFacts", "factsEth"]) if (L[k] !== undefined) $("#" + k).checked = L[k];
   if (L.onExists) $$("input[name=onExists]").forEach(r => r.checked = r.value === L.onExists);
   wire();
-  pbWire(); idWire(); rwWire(); rvWire();
+  pbWire(); idWire(); rwWire(); rnWire(); rvWire();
   try { await loadState(); } catch (e) { fail(e); }
   refreshQueueLists().catch(fail);
   loadModels().catch(e => toast("⚠ LM Studio: " + e.message, 6000));
@@ -1807,5 +1943,6 @@ function rvWire() {
   setMode(mode);
 })();
 </script>
+<div id="settings"><div class="box"><div style="display:flex;align-items:center"><b style="font-size:15px">Settings</b><button id="setClose" style="margin-left:auto">close</button></div><div id="setBody"></div></div></div>
 </body>
 </html>

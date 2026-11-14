@@ -233,7 +233,9 @@ class Handler(BaseHTTPRequestHandler):
                 "/api/audit/results": self.audit_results, "/api/audit/status": self.audit_status,
                 "/api/compare/status": self.compare_status, "/api/photobash/status": self.pb_status,
                 "/api/ideas/status": self.id_status, "/api/ideas/wildcards": self.id_wildcards,
-                "/api/rewrite/status": self.rw_status, "/api/models": self.models, "/api/drives": self.drives,
+                "/api/rewrite/status": self.rw_status, "/api/settings/all": self.settings_all,
+                "/api/render/state": self.r_state, "/api/render/status": self.r_status,
+                "/api/render/fields": self.r_fields, "/api/render/for": self.r_for, "/api/models": self.models, "/api/drives": self.drives,
                 "/api/ls": self.ls, "/thumb": self.thumb, "/api/queue": self.queue_get, "/api/queues": self.queues,
                 "/api/queues/load": self.queues_load, "/api/preset": self.preset_get, "/api/job": self.job,
                 "/api/lists": self.lists, "/api/modes": self.modes,
@@ -271,6 +273,9 @@ class Handler(BaseHTTPRequestHandler):
                 "/api/ideas/start": self.id_start, "/api/ideas/stop": self.id_stop, "/api/ideas/save": self.id_save,
                 "/api/rewrite/start": self.rw_start, "/api/rewrite/stop": self.rw_stop, "/api/rewrite/save": self.rw_save,
                 "/api/rewrite/load": self.rw_load, "/api/rewrite/split": self.rw_split,
+                "/api/render/start": self.r_start, "/api/render/stop": self.r_stop,
+                "/api/render/fromlast": self.r_fromlast, "/api/render/map": self.r_map,
+                "/api/render/preset": self.r_preset, "/api/render/for_many": self.r_for_many,
             }.get(url.path)
             if route is None:
                 return self._error("not found", 404)
@@ -351,7 +356,8 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"ok": True, "favorites": favs})
 
     def settings_put(self, body):
-        allowed = {"group_dir", "load_context_length", "max_side", "default_preset"}
+        allowed = {"group_dir", "load_context_length", "max_side", "default_preset", "wildcards_dir", "sweeps_dir",
+                   "lmstudio_models_dir", "comfyui_url", "render_gpu", "render_free_after", "render_preset"}
         with SETTINGS_LOCK:
             s = config.load_settings()
             for k, v in body.items():
@@ -625,6 +631,70 @@ class Handler(BaseHTTPRequestHandler):
     def review_report(self, q):
         from . import report
         self._json(report.build(q.get("kind", "sweep"), q.get("path", "")))
+
+    # --- Settings page + Render (ComfyUI) ---------------------------------------------------------------------
+    def settings_all(self, q):
+        s = config.load_settings()
+        keys = ("group_dir", "wildcards_dir", "sweeps_dir", "lmstudio_models_dir", "load_context_length", "comfyui_url",
+                "render_gpu", "render_free_after", "render_preset")
+        self._json({k: s.get(k) for k in keys})
+
+    def r_state(self, q):
+        from . import render
+        s = config.load_settings()
+        self._json({"presets": render.list_presets(), "workflows": render.list_workflows(),
+                    "current": s.get("render_preset", ""), "gpu": s.get("render_gpu", "shared"),
+                    "job": render.JOB.status(10 ** 9)})
+
+    def r_status(self, q):
+        from . import render
+        self._json(render.JOB.status(int(q.get("since") or 0)))
+
+    def r_fields(self, q):
+        from . import render
+        wf = render.load_workflow(q.get("name", ""))
+        self._json({"fields": render.fields(wf), "mapping": render.load_mapping(q.get("name", ""))})
+
+    def r_for(self, q):
+        from . import render
+        self._json(render.renders_for([q.get("key", "")]))
+
+    def r_for_many(self, body):
+        from . import render
+        texts = [" ".join((t or "").split()) for t in body.get("texts") or []]
+        keys = {render.prompt_key(t): t for t in texts if t}
+        found = render.renders_for(list(keys))
+        self._json({"by_text": {keys[k]: v for k, v in found.items()}})
+
+    def r_fromlast(self, body):
+        from . import render
+        self._json(render.save_last_run(body.get("name", "")))
+
+    def r_map(self, body):
+        from . import render
+        render.save_mapping(body["name"], body.get("mapping") or {})
+        self._json({"ok": True, "mapping": render.load_mapping(body["name"])})
+
+    def r_preset(self, body):
+        from . import render
+        self._json(render.save_preset(body))
+
+    def r_start(self, body):
+        from . import render
+        p = body.get("preset") or ""
+        if p:
+            with SETTINGS_LOCK:
+                s = config.load_settings()
+                s["render_preset"] = p
+                config.save_settings(s)
+        if config.load_settings().get("render_gpu", "shared") == "shared" and self._lm_busy():
+            return self._error("a prompt job is using LM Studio - on one GPU wait for it, or set GPU sharing to separate")
+        self._json(render.JOB.start(body.get("items") or [], p))
+
+    def r_stop(self, body):
+        from . import render
+        render.JOB.stop()
+        self._json({"ok": True})
 
     # --- Rewrite ------------------------------------------------------------------------------------------
     def _lm_busy(self):

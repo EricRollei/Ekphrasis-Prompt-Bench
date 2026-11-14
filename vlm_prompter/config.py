@@ -62,6 +62,12 @@ DEFAULTS: Dict[str, Any] = {
     # --- Prompt Review -----------------------------------------------------------------------------------------------
     "sweeps_dir": "",                   # Review: Eric_Krea2 Sweep Plan output folder (ComfyUI/output/sweeps)
     "review_folders": [],               # extra image folders added in the Review tab
+
+    # --- Render (ComfyUI) ---------------------------------------------------------------------------------------------
+    "comfyui_url": "http://127.0.0.1:8188",
+    "render_gpu": "shared",             # shared: unload the LM Studio model while rendering | separate: both at once
+    "render_free_after": True,          # shared GPU: ask ComfyUI to free its VRAM after a render batch
+    "render_preset": "",                # last render preset used
     "recent_folders": [],
 }
 
