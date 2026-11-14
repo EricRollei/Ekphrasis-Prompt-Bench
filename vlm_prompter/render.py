@@ -195,6 +195,34 @@ def save_mapping(name: str, mapping: Dict[str, Any]) -> None:
         json.dump(clean, h, indent=1)
 
 
+_UNLOAD_HINTS = ("unload", "freememory", "free_memory", "cleanvram", "clean_vram", "purgevram", "purge_vram")
+
+
+def unload_nodes(wf: Dict[str, Any]) -> List[str]:
+    """Nodes that unload models / free VRAM (by class name), e.g. EricKrea2UnloadModels."""
+    return [nid for nid, n in wf.items() if any(h in n.get("class_type", "").lower().replace(" ", "") for h in _UNLOAD_HINTS)]
+
+
+def without_unload(wf: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The workflow minus its unload node(s) and anything that only hangs off them (display nodes ...).
+    None when there is nothing to drop, or when dropping would remove an image-saving node (then keep it as is)."""
+    drop = set(unload_nodes(wf))
+    if not drop:
+        return None
+    changed = True
+    while changed:                                  # consumers of a dropped node lose their input -> drop them too
+        changed = False
+        for nid, n in wf.items():
+            if nid in drop:
+                continue
+            if any(isinstance(v, list) and len(v) == 2 and str(v[0]) in drop for v in (n.get("inputs") or {}).values()):
+                drop.add(nid)
+                changed = True
+    if any("save" in wf[nid].get("class_type", "").lower() for nid in drop):
+        return None
+    return {nid: n for nid, n in wf.items() if nid not in drop}
+
+
 # ----------------------------------------------------------------------------------------------- presets
 PRESET_DEFAULTS = {"backend": "comfyui", "workflow": "", "batch": 1, "seed_mode": "random", "seed": 0,
                    "width": 0, "height": 0, "negative": ""}
@@ -325,6 +353,9 @@ class RenderJob:
         c = Comfy(s.get("comfyui_url"))
         try:
             base = load_workflow(preset["workflow"])
+            lean = without_unload(base)                   # batch renders keep models loaded between images
+            jobs_total = len(items) * preset["batch"]
+            job_no = 0
             if s.get("render_gpu", "shared") == "shared":
                 self._set(phase="unloading the LM Studio model (one GPU)")
                 gone = swap_out_llm()
@@ -341,7 +372,9 @@ class RenderJob:
                     if self.cancel.is_set():
                         raise InterruptedError
                     seed = (int(preset["seed"]) + b) if preset["seed_mode"] == "fixed" else random.randrange(1, 2 ** 48)
-                    wf = copy.deepcopy(base)
+                    job_no += 1
+                    last = job_no == jobs_total
+                    wf = copy.deepcopy(base if (last or lean is None) else lean)   # unload only after the last image
 
                     def setf(role, value):
                         ref = mapping.get(role)
@@ -397,7 +430,10 @@ class RenderJob:
                 except RuntimeError:
                     pass
         except InterruptedError:
-            pass
+            try:                                          # stopped mid-batch: the last (unloading) run never came
+                c.free()
+            except RuntimeError:
+                pass
         except Exception as exc:
             traceback.print_exc()
             self._set(last_error=f"{type(exc).__name__}: {exc}")
