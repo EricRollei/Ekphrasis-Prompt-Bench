@@ -1,9 +1,11 @@
-# VLM Prompter
+# Ekphrasis Prompt Bench
+
+*Ekphrasis (Greek): the art of describing a work of art in words.*
 
 **Image-to-prompt, photobashing, prompt ideas and prompt rewriting with local vision models - plus a review bench for
 the renders that come back.**
 
-VLM Prompter is a local web app (and command line) that drives vision-language models running in
+Ekphrasis Prompt Bench is a local web app (and command line) that drives vision-language models running in
 [LM Studio](https://lmstudio.ai). Point it at a folder of images and it writes prompts for modern text-to-image models -
 Krea 2, MOSS-Image, Ideogram 4, Wan 2.2 and more - in each model's own format. It can fuse several pictures into one new
 idea, invent prompts with no image at all, rewrite existing prompts into a different style or model format, and check
@@ -12,7 +14,7 @@ the finished renders against their prompts and source images.
 Everything runs on your own machine. No cloud, no accounts.
 
 <!-- SCREENSHOT: assets/overview.png - the app with a folder open in Generate mode -->
-![VLM Prompter](assets/overview.png)
+![Ekphrasis Prompt Bench](assets/overview.png)
 
 ---
 
@@ -46,8 +48,8 @@ Everything runs on your own machine. No cloud, no accounts.
 ## Installation
 
 ```bat
-git clone https://github.com/EricRollei/VLM_Prompter.git
-cd VLM_Prompter
+git clone https://github.com/EricRollei/Ekphrasis-Prompt-Bench.git
+cd Ekphrasis-Prompt-Bench
 setup.bat
 ```
 
