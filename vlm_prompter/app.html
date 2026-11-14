@@ -253,7 +253,7 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
   <span class="muted" style="margin-left:10px">Thinking</span>
   <select id="mode" title="Reasoning mode - the choices come from this model's own chat template"></select>
   <span class="muted" style="margin-left:10px">Preset</span>
-  <select id="preset" title="What kind of prompt to write"></select><span id="lyBox" style="display:none" title="Layout presets: boxes are converted to pixels for this canvas - render at the size shown with each result">canvas <select id="lyAspect"><option value="source">source aspect</option><option>1:1</option><option>4:3</option><option>3:2</option><option>16:9</option><option>21:9</option><option>3:4</option><option>2:3</option><option>9:16</option></select> <input type="number" id="lyMP" value="1.0" min="0.25" max="4" step="0.25" style="width:56px"> MP</span>
+  <select id="preset" title="What kind of prompt to write"></select><label title="LoRA trigger word: put at the very front of every prompt, ended with a period (e.g. 'ohwx woman. A woman stands ...'). Applied in every mode; JSON presets are left alone." style="margin-left:6px">trigger <input type="text" id="trigger" placeholder="none" style="width:110px"></label><span id="lyBox" style="display:none" title="Layout presets: boxes are converted to pixels for this canvas - render at the size shown with each result">canvas <select id="lyAspect"><option value="source">source aspect</option><option>1:1</option><option>4:3</option><option>3:2</option><option>16:9</option><option>21:9</option><option>3:4</option><option>2:3</option><option>9:16</option></select> <input type="number" id="lyMP" value="1.0" min="0.25" max="4" step="0.25" style="width:56px"> MP</span>
 </header>
 
 <div class="layout">
@@ -924,7 +924,7 @@ async function runCompare() {
   if (!variants.length) return toast("tick at least one preset and one of without / with");
   if (!S.queue.length) return toast("the queue is empty");
   if ($("#model").value === "__loaded__" && !(S.loaded || []).length) return toast("nothing is loaded in LM Studio - load a model there or pick one at the top", 5000);
-  await api("/api/compare/start", {layout: layoutSpec(), items: S.queue.map(it => ({image: it.image, root: it.root})), variants, name: $("#cmpName").value.trim(),
+  await api("/api/compare/start", {layout: layoutSpec(), trigger: $("#trigger").value.trim(), items: S.queue.map(it => ({image: it.image, root: it.root})), variants, name: $("#cmpName").value.trim(),
     model: $("#model").value, mods: modArgs(), note: $("#runNote").value, max_tokens: +$("#maxTokens").value || 0,
     temperature: $("#temperature").value, seed: $("#seed").value});
   setRunning(true); S.comparing = true;
@@ -952,7 +952,7 @@ async function run() {
   const body = { items: todo.map(it => ({image: it.image, root: it.root})), model: $("#model").value, preset: $("#preset").value,
     mods: modArgs(), note: $("#runNote").value, notes, variations: +$("#variations").value || 1, reasoning: $("#mode").value,
     max_tokens: +$("#maxTokens").value || 0, temperature: $("#temperature").value, seed: $("#seed").value, force: $("#force").checked,
-    context_length: +$("#ctx").value || 0, layout: layoutSpec(), facts: $("#useFacts").checked, facts_ethnicity: $("#factsEth").checked,
+    context_length: +$("#ctx").value || 0, layout: layoutSpec(), trigger: $("#trigger").value.trim(), facts: $("#useFacts").checked, facts_ethnicity: $("#factsEth").checked,
     redo: todo.filter(it => it.redo).map(it => it.image) };
   todo.forEach(it => { it.status = "running"; it.error = ""; });
   S.runImages = new Set(todo.map(it => it.image));
@@ -1483,7 +1483,7 @@ async function rwRun() {
   if (st.running) { await api("/api/rewrite/stop", {}); $("#rwState").textContent = "stopping..."; return; }
   if (!RW.items.length) return toast("load or paste prompts first");
   if ($("#model").value === "__loaded__" && !(S.loaded || []).length) return toast("nothing is loaded in LM Studio - load a model there or pick one at the top", 5000);
-  await api("/api/rewrite/start", {layout: layoutSpec(), items: RW.items, op: RW.op, instruction: $("#rwInstr").value.trim(), rules: $("#rwRules").value.trim(),
+  await api("/api/rewrite/start", {layout: layoutSpec(), trigger: $("#trigger").value.trim(), items: RW.items, op: RW.op, instruction: $("#rwInstr").value.trim(), rules: $("#rwRules").value.trim(),
     variations: +$("#rwVar").value || 3, words: $("#rwWords").value, keep: $("#rwKeep").value, facts: $("#rwFacts").checked,
     preset: $("#preset").value, model: $("#model").value, reasoning: $("#mode").value});
   RW.since = 0; rwPoll();
@@ -1563,7 +1563,7 @@ async function idRun() {
   if (st.running) { await api("/api/ideas/stop", {}); $("#idState").textContent = "stopping..."; return; }
   const needModel = ID.mode !== "wildcards" || $("#idPolish").checked;
   if (needModel && $("#model").value === "__loaded__" && !(S.loaded || []).length) return toast("nothing is loaded in LM Studio - load a model there or pick one at the top", 5000);
-  await api("/api/ideas/start", {layout: layoutSpec(), mode: ID.mode, brief: $("#idBrief").value.trim(), template: $("#idTemplate").value.trim(), polish: $("#idPolish").checked,
+  await api("/api/ideas/start", {layout: layoutSpec(), trigger: $("#trigger").value.trim(), mode: ID.mode, brief: $("#idBrief").value.trim(), template: $("#idTemplate").value.trim(), polish: $("#idPolish").checked,
     dice: ID.on, count: +$("#idCount").value || 8, temperature: +$("#idTemp").value || 1.0, seed: $("#idSeed").value.trim(),
     preset: $("#preset").value, model: $("#model").value, reasoning: $("#mode").value});
   ID.since = 0; idPoll();
@@ -1661,7 +1661,7 @@ async function pbRun() {
   if (PB.slots.length < 2) return toast("add at least two sources");
   if ($("#model").value === "__loaded__" && !(S.loaded || []).length) return toast("nothing is loaded in LM Studio - load a model there or pick one at the top", 5000);
   const sources = PB.slots.map(s => ({path: s.path, paths: s.folder ? (s.folders || [s.path]) : undefined, weight: s.weight, take: s.only.length ? s.only : "everything"}));
-  await api("/api/photobash/start", {layout: layoutSpec(), sources, mode: $("#pbMode").value, mixes: +$("#pbMixes").value || 4, temperature: +$("#pbTemp").value || 0.9,
+  await api("/api/photobash/start", {layout: layoutSpec(), trigger: $("#trigger").value.trim(), sources, mode: $("#pbMode").value, mixes: +$("#pbMixes").value || 4, temperature: +$("#pbTemp").value || 0.9,
     seed: $("#pbSeed").value.trim(), note: $("#pbNote").value.trim(), preset: $("#preset").value, model: $("#model").value, reasoning: $("#mode").value,
     avoid_text: $("#pbNoText").checked, avoid_marks: $("#pbNoMarks").checked, add_text: $("#pbAddText").value.trim(), text_where: $("#pbTextWhere").value.trim()});
   PB.since = 0; pbPoll();                                 // results accumulate; "clear results" empties
@@ -1689,6 +1689,8 @@ async function pbSaveList(all) {
 }
 function pbWire() {
   $("#preset").addEventListener("change", layoutShow); setTimeout(layoutShow, 800);
+  try { $("#trigger").value = localStorage.getItem("vlmp.trigger") || ""; } catch {}
+  $("#trigger").addEventListener("change", () => { try { localStorage.setItem("vlmp.trigger", $("#trigger").value.trim()); } catch {} });
   try { const L = JSON.parse(localStorage.getItem("vlmp.layout") || "{}"); if (L.aspect) $("#lyAspect").value = L.aspect; if (L.mp) $("#lyMP").value = L.mp; } catch {}
   ["#lyAspect", "#lyMP"].forEach(s => $(s).addEventListener("change", () => { try { localStorage.setItem("vlmp.layout", JSON.stringify(layoutSpec())); } catch {} }));
   pbLoad(); pbRenderSlots();

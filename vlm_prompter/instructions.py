@@ -143,3 +143,16 @@ def compose(preset: Preset, modifiers: List[Tuple[Modifier, str]] = None, note: 
     return Composed(system=system, user=user, variations=variations, sha=sha, parts={
         "preset": preset.id, "modifiers": [(m.id, v) for m, v in modifiers or []], "note": note,
     })
+
+
+def apply_trigger(text: str, trigger: str, output: str = "text") -> str:
+    """LoRA trigger word at the very front, ended with a period: 'trigger. prompt ...' (Nov 15, Eric).
+    Done in code after the model writes, so it is exact and never doubled. JSON prompts are left alone."""
+    t = (trigger or "").strip().rstrip(".,;: ")
+    if not t or output == "json" or not text:
+        return text
+    body = text.lstrip()
+    if body.lower().startswith(t.lower()):                    # model already wrote it: replace, don't double
+        body = body[len(t):].lstrip(" .,;:")
+    body = body[:1].upper() + body[1:]
+    return f"{t}. {body}"

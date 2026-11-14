@@ -82,7 +82,8 @@ class CompareJob:
                                mods=list(base.get("mods") or []), note=base.get("note", ""),
                                reasoning=v.get("reasoning", ""), max_tokens=int(base.get("max_tokens") or 0),
                                temperature=base.get("temperature"), seed=base.get("seed"),
-                               facts=bool(v.get("facts")), layout=dict(base.get("layout") or {}), argv=["compare", label])
+                               facts=bool(v.get("facts")), layout=dict(base.get("layout") or {}), trigger=base.get("trigger", ""),
+                               argv=["compare", label])
 
                 def on_event(e, label=label):
                     if e.get("type") == "item":

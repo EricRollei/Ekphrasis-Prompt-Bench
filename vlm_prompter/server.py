@@ -495,7 +495,7 @@ class Handler(BaseHTTPRequestHandler):
                        seed=(int(body["seed"]) if body.get("seed") not in (None, "") else None),
                        force=bool(body.get("force")), force_images=body.get("redo", []) or [],
                        context_length=int(body.get("context_length") or 0), facts=bool(body.get("facts")),
-                       facts_ethnicity=bool(body.get("facts_ethnicity")), layout=body.get("layout") or {}, argv=["gui"])
+                       facts_ethnicity=bool(body.get("facts_ethnicity")), layout=body.get("layout") or {}, trigger=body.get("trigger", ""), argv=["gui"])
         with SETTINGS_LOCK:
             s["last_model"] = body["model"]
             config.save_settings(s)
@@ -720,7 +720,7 @@ class Handler(BaseHTTPRequestHandler):
         items = _items(body)
         base = {"model": body.get("model", ""), "mods": body.get("mods") or [], "note": body.get("note", ""),
                 "max_tokens": body.get("max_tokens") or 0, "temperature": body.get("temperature"),
-                "seed": body.get("seed"), "layout": body.get("layout") or {}}
+                "seed": body.get("seed"), "layout": body.get("layout") or {}, "trigger": body.get("trigger", "")}
         self._json(compare.JOB.start(config.load_settings(), items, body.get("variants") or [], base,
                                      body.get("name", "")))
 

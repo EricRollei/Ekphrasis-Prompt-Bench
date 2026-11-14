@@ -240,6 +240,9 @@ class PhotobashJob:
                             text = text + ''
                     if not text:
                         raise ValueError("empty answer")
+                    if spec.get('trigger'):
+                        from .instructions import apply_trigger
+                        text = apply_trigger(text, spec['trigger'], preset.output)
                     res = {"n": n, "prompt": text, "mode": mode, "preset": preset.id, "model": api_id,
                            "images": images, "weights": [s.get("weight", 50) for s in sources],
                            "takes": [s.get("take") or "everything" for s in sources],

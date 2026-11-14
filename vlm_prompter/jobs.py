@@ -89,6 +89,7 @@ class JobSpec:
     context_length: int = 0                             # context to load with (0 = settings load_context_length)
     facts: bool = False                                 # add measured facts (pose + face detectors) per image
     facts_ethnicity: bool = False
+    trigger: str = ""                                   # LoRA trigger word put in front of every prompt
     layout: Dict[str, Any] = field(default_factory=dict)   # canvas for layout presets                       # include the detector's ethnicity guess in those facts
     argv: List[str] = field(default_factory=list)
 
@@ -169,6 +170,9 @@ def run_generation(settings: Dict, spec: JobSpec, on_event: Callable[[Dict], Non
                                                               **composed.parts})
         r = generate_one(client, image, preset, composed, params, cache, log,
                          force=spec.force or os.path.normcase(image) in forced)
+        if spec.trigger and r.prompts:            # after the cache, so cached prompts get it too
+            from .instructions import apply_trigger
+            r.prompts = [apply_trigger(p, spec.trigger, preset.output) for p in r.prompts]
         results[image] = r
         if spec.live_per_image and r.ok:
             path = write_per_image(image, r.prompts, suffix, settings["per_image_suffix_json"])

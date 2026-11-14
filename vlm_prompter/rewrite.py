@@ -215,6 +215,8 @@ class RewriteJob:
             caps = caps_for(gguf)
             mode_r = normalise_mode(spec.get("reasoning") or preset.reasoning, caps)
             keep = [w.strip() for w in re.split(r"[,\n]", spec.get("keep") or "") if w.strip()]
+            if spec.get("trigger"):
+                keep.append(spec["trigger"].strip().rstrip(".,;: "))
             word = WORDS.get(spec.get("words") or "fresh", WORDS["fresh"])
             keep_rules = ("Keep these words and names exactly as written: " + ", ".join(keep) + "\n") if keep else ""
             keep_rules += "Keep any text in double quotes (text to be rendered in the image) exactly.\n"
@@ -273,6 +275,9 @@ class RewriteJob:
                                 out = out + ''
                         if not out:
                             raise ValueError("empty answer")
+                        if spec.get('trigger'):
+                            from .instructions import apply_trigger
+                            out = apply_trigger(out, spec['trigger'], preset.output)
                         if op == "variations":
                             earlier.append(" ".join(out.split()[:10]) + " ...")
                         res = {"n": len(self.state["results"]) + 1, "src_index": idx, "k": k, "src": src, "prompt": out,

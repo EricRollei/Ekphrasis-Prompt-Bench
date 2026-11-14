@@ -208,6 +208,9 @@ class IdeasJob:
                         seed_text = wc.fill(spec["template"], rng)
                         info["filled"] = seed_text
                         if not use_model:
+                            if spec.get("trigger"):
+                                from .instructions import apply_trigger
+                                seed_text = apply_trigger(seed_text, spec["trigger"], preset.output)
                             self._add(n, seed_text, mode, preset.id, "", info)
                             continue
                         rules = POLISH_RULES.format(seed=seed_text)
@@ -241,6 +244,9 @@ class IdeasJob:
                             text = text + ''
                     if not text:
                         raise ValueError("empty answer")
+                    if spec.get('trigger'):
+                        from .instructions import apply_trigger
+                        text = apply_trigger(text, spec['trigger'], preset.output)
                     earlier.append(" ".join(text.split()[:12]) + " ...")
                     self._add(n, text, mode, preset.id, api_id, info)
                 except Exception as exc:
