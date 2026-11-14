@@ -515,6 +515,7 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
         <h3>What to write</h3>
         <div class="opt">
           <label><input type="checkbox" id="mImage" checked> <b>Each prompt next to its image</b></label>
+          <label title="For LoRA training (ai-toolkit, kohya, OneTrainer): the first prompt of each image as <name>.txt beside it. An existing .txt is never overwritten - it is skipped and counted."><input type="checkbox" id="mCaption"> <b>Training captions</b> <span class="muted">(&lt;name&gt;.txt beside each image, never overwrites)</span></label>
           <div class="where">image.prompt.txt (image.prompt.json for JSON presets) in the image's own folder. Never overwrites: a second save makes image.2.prompt.txt.</div>
         </div>
         <div class="opt">
@@ -588,7 +589,7 @@ function loadLocal() { try { return JSON.parse(localStorage.getItem("vlmp.ui") |
 function saveLocal() {
   const v = { mods: S.mods, runNote: $("#runNote").value, variations: $("#variations").value, reasoning: $("#mode").value,
     temperature: $("#temperature").value, maxTokens: $("#maxTokens").value, seed: $("#seed").value,
-    mImage: $("#mImage").checked, mFolder: $("#mFolder").checked, mCombined: $("#mCombined").checked, autoSave: $("#autoSave").checked,
+    mImage: $("#mImage").checked, mCaption: $("#mCaption").checked, mFolder: $("#mFolder").checked, mCombined: $("#mCombined").checked, autoSave: $("#autoSave").checked,
     fmt: $("#fmt").value, groupBy: $("#groupBy").value, combined: $("#combined").value, groupDir: $("#groupDir").value,
     onExists: onExists(), dedupe: $("#dedupe").checked, sidecar: $("#sidecar").checked, tw: $("#tw").value, recursive: $("#recursive").checked,
     onlyNew: $("#onlyNew").checked, path: S.browse?.path || "", model: $("#model").value, ctx: $("#ctx").value,
@@ -607,6 +608,7 @@ const hasPrompts = it => (it.prompts || []).some(p => p.trim());
 function destKeys() {
   const k = {}, dir = $("#groupDir").value.trim().toLowerCase(), fmt = $("#fmt").value;
   if ($("#mImage").checked) k["per-image"] = "img";
+  if ($("#mCaption").checked) k["caption"] = "cap";
   if ($("#mFolder").checked) k["per-folder"] = `folder|${dir}|${$("#groupBy").value}|${fmt}`;
   if ($("#mCombined").checked) k["combined"] = `comb|${dir}|${($("#combined").value.trim() || "(auto)").toLowerCase()}|${fmt}`;
   return k;
@@ -1029,7 +1031,7 @@ async function saveFiles(items, auto = false) {
   const common = {format: $("#fmt").value, group_by: $("#groupBy").value, group_dir: $("#groupDir").value,
                   combined: $("#combined").value, overrides: S.overrides, on_exists: onExists(), dedupe: $("#dedupe").checked,
                   sidecar: $("#sidecar").checked};
-  const written = [];
+  let written = [];
   for (const [mode, key] of Object.entries(keys)) {          // one request per destination, only what that destination still needs
     const todo = items.filter(it => unsavedFor(it, key));
     if (!todo.length) continue;
@@ -1039,6 +1041,12 @@ async function saveFiles(items, auto = false) {
     todo.forEach(it => { it.savedTo = {...(it.savedTo || {}), [key]: sig(it)}; });
   }
   if (!written.length) { toast("nothing new to save for the outputs ticked on the Save tab"); renderQueue(); return; }
+  const caps = written.filter(w => w.mode === "caption");
+  written = written.filter(w => w.mode !== "caption");
+  if (caps.length) { const nNew = caps.filter(w => w.action === "new").length, nSkip = caps.length - nNew;
+    $("#written").insertAdjacentHTML("afterbegin", `<div>${fmtN(nNew)} training caption(s) written next to their images${nSkip ? `, <span style="color:var(--warn)">${fmtN(nSkip)} skipped - a caption .txt already existed</span>` : ""}</div>`);
+    toast(`training captions: ${nNew} written${nSkip ? `, ${nSkip} skipped (already existed)` : ""}`, 5000); }
+  if (!written.length) { renderQueue(); saveQueue(); return; }
   const perImage = written.filter(w => w.mode === "per-image"), lists = written.filter(w => w.mode !== "per-image");
   const when = new Date().toLocaleTimeString();
   const lines = lists.map(w => `<div><a data-open="${esc(w.path)}">open</a><span>${esc(w.path)} <span class="muted">- ${w.action === "appended" ? `added ${w.count}` : w.action === "unchanged" ? "nothing new (all already in it)" : `${w.count} prompts`}</span></span></div>`).join("") +
@@ -1179,7 +1187,7 @@ function wire() {
   $("#written").onclick = e => { const p = e.target.dataset.open; if (p) api("/api/open", {path: p}).catch(fail); };
   $("#whenceOut").onclick = e => { const p = e.target.dataset.open; if (p) api("/api/open", {path: p}).catch(fail); };
   $("#groupDir").addEventListener("change", refreshListNames);
-  ["#mImage", "#mFolder", "#mCombined", "#fmt", "#groupBy", "#combined", "#groupDir"].forEach(s => $(s).addEventListener("change", () => renderQueue()));
+  ["#mImage", "#mCaption", "#mFolder", "#mCombined", "#fmt", "#groupBy", "#combined", "#groupDir"].forEach(s => $(s).addEventListener("change", () => { renderQueue(); saveLocal(); }));
   $("#mFolder").addEventListener("change", () => { if ($("#mFolder").checked) previewNames().catch(fail); else $("#plan").innerHTML = ""; });
   ["#runNote", "#variations", "#mode", "#ctx", "#temperature", "#maxTokens", "#seed", "#mImage", "#mFolder", "#mCombined", "#autoSave", "#fmt",
    "#groupBy", "#combined", "#groupDir", "#dedupe", "#sidecar", "#recursive", "#onlyNew"].forEach(s => $(s).addEventListener("change", saveLocal));
@@ -1787,7 +1795,7 @@ function rvWire() {
   S.wantModel = L.model || "__loaded__"; S.wantMode = L.reasoning || "";
   set("#maxTokens", L.maxTokens); set("#seed", L.seed); set("#fmt", L.fmt); set("#groupBy", L.groupBy); set("#combined", L.combined);
   set("#groupDir", L.groupDir); set("#tw", L.tw);
-  for (const k of ["mImage", "mFolder", "mCombined", "autoSave", "dedupe", "sidecar", "recursive", "onlyNew", "useFacts", "factsEth"]) if (L[k] !== undefined) $("#" + k).checked = L[k];
+  for (const k of ["mImage", "mCaption", "mFolder", "mCombined", "autoSave", "dedupe", "sidecar", "recursive", "onlyNew", "useFacts", "factsEth"]) if (L[k] !== undefined) $("#" + k).checked = L[k];
   if (L.onExists) $$("input[name=onExists]").forEach(r => r.checked = r.value === L.onExists);
   wire();
   pbWire(); idWire(); rwWire(); rvWire();

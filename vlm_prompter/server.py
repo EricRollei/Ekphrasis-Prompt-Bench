@@ -542,6 +542,14 @@ class Handler(BaseHTTPRequestHandler):
         s = config.load_settings()
         items = _items(body)
         prompts = {it["image"]: it.get("prompts") or [] for it in body.get("items", [])}
+        if body.get("modes") == ["caption"]:                  # training captions: first prompt -> <stem>.txt
+            from .outputs import write_caption
+            from .store import append_index
+            written = [write_caption(img, ps[0]) for img, ps in prompts.items() if ps and ps[0].strip()]
+            append_index(config.RUNS_DIR, [{"file": w["path"], "mode": "caption", "image": img, "prompt": ps[0]}
+                                           for (img, ps), w in zip([(i, p) for i, p in prompts.items() if p and p[0].strip()], written)
+                                           if w["action"] == "new"])
+            return self._json({"written": written})
         overrides = body.get("overrides") or {}
         written = write_outputs(s, items, prompts, body.get("modes", []), body.get("format", "lines"),
                                 body.get("group_by", "folder"), body.get("group_dir", "") or s["group_dir"],

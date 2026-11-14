@@ -20,7 +20,7 @@ import json
 import os
 import re
 from collections import OrderedDict
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 _ILLEGAL = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _ID_RE = re.compile(r"^(\d{4,})(?=[-_ .]|$)")
@@ -362,3 +362,14 @@ def combined_name(items: Sequence[Tuple[str, str]], settings: Dict, ext: str = "
              for r in roots[:3]]
     stem = sep.join(stems) + (f"{sep}more" if len(roots) > 3 else "")
     return f"{stem}{sep}combined{sep}prompts{ext}"
+
+
+def write_caption(image: str, prompt: str) -> Dict[str, Any]:
+    """Training caption <stem>.txt beside the image (ai-toolkit / kohya / OneTrainer read these).
+    Never overwrites: an existing caption is left alone and reported as skipped."""
+    path = os.path.splitext(image)[0] + ".txt"
+    if os.path.exists(path):
+        return {"path": path, "action": "skipped", "count": 0}
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(one_line(prompt) + "\n")
+    return {"path": path, "action": "new", "count": 1}
