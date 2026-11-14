@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>VLM Prompter - Report</title>
+<style>
+:root { --bg:#f6f4ef; --panel:#fff; --fg:#1f1f1d; --muted:#7a776f; --line:#e2ded4; --soft:#efece4; --accent:#2f5d8a; --good:#2e7d4f; --bad:#b03a2e; --warn:#a85a14; }
+@media (prefers-color-scheme: dark) { :root { --bg:#151617; --panel:#1e2022; --fg:#e8e6e1; --muted:#9a978f; --line:#33363a; --soft:#26292c; --accent:#7fa8d6; --good:#6cc28f; --bad:#e07a6e; --warn:#e0a060; } }
+* { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui, "Segoe UI", sans-serif; }
+header { background:var(--panel); border-bottom:2px solid var(--line); padding:10px 16px; }
+h1 { font-size:16px; margin:0; } h2 { font-size:14px; margin:22px 0 6px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+.wrap { padding:6px 16px 30px; max-width:1500px; }
+table { border-collapse:collapse; background:var(--panel); width:100%; font-size:13px; }
+td, th { padding:5px 9px; border-bottom:1px solid var(--line); text-align:right; white-space:nowrap; }
+td:first-child, th:first-child { text-align:left; white-space:normal; max-width:520px; }
+th { color:var(--muted); font-weight:600; font-size:12px; }
+.muted { color:var(--muted); } .bad { color:var(--bad); font-weight:600; } .good { color:var(--good); font-weight:600; }
+.tabs button { font:inherit; background:var(--soft); border:1px solid var(--line); border-radius:6px; padding:3px 10px; cursor:pointer; margin-right:4px; }
+.tabs button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+.lesson { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px; margin-bottom:10px; }
+.ex { display:flex; gap:8px; flex-wrap:wrap; margin-top:6px; }
+.ex div { width:170px; font-size:11.5px; } .ex img { width:170px; height:170px; object-fit:cover; border-radius:6px; background:var(--soft); }
+</style>
+</head>
+<body>
+<header><h1>Report</h1><div class="muted" id="src"></div></header>
+<div class="wrap">
+  <h2>Compare by</h2>
+  <div class="tabs" id="tabs"></div>
+  <table id="tbl"></table>
+  <div class="muted" style="font-size:12px;margin-top:4px">adherence / fidelity: your value where you set one, else the vision check. Reversals / relation breaks: detector pose check, % of renders compared with a source.
+    Defects: your marks (vision suggestions in brackets). Past limit: checklist items after token 507 that Krea 2 never read.</div>
+  <h2>Lesson candidates</h2>
+  <div class="muted" style="margin-bottom:6px">Renders that follow the prompt well (adherence 85+) but differ from the source on one aspect: the prompt probably left that aspect unsaid.</div>
+  <div id="lessons"></div>
+  <h2>Your lesson notes</h2>
+  <div id="yours"></div>
+</div>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const thumb = (p, side) => `/thumb?side=${side}&path=${encodeURIComponent(p)}`;
+const q = new URLSearchParams(location.search);
+let R = null, BY = "version";
+const fmt = (v, suf = "") => v == null ? '<span class="muted">–</span>' : v + suf;
+function table() {
+  const rows = R.by[BY];
+  $("#tbl").innerHTML = `<tr><th>${BY}</th><th>renders</th><th>rated</th><th>stars</th><th>keepers</th><th>defects</th><th>checked</th><th>adherence</th><th>fidelity</th><th>reversals</th><th>relation breaks</th><th>past limit</th></tr>` +
+    rows.map(r => `<tr><td>${esc(r.group)}</td><td>${r.renders}</td><td>${r.rated}</td><td>${fmt(r.stars)}</td><td>${fmt(r.keepers, "%")}</td>
+      <td>${fmt(r.defects, "%")} <span class="muted">(${r.vdefects == null ? "–" : r.vdefects + "%"})</span></td><td>${r.checked}</td>
+      <td>${fmt(r.adherence)}</td><td>${fmt(r.fidelity)}</td><td class="${(r.reversals || 0) >= 20 ? "bad" : ""}">${fmt(r.reversals, "%")}</td>
+      <td>${fmt(r.relation_breaks, "%")}</td><td>${r.beyond || ""}</td></tr>`).join("");
+  $("#tabs").innerHTML = ["version", "checkpoint", "preset", "model"].map(k =>
+    `<button data-k="${k}" class="${k === BY ? "on" : ""}">${k} (${R.by[k].length})</button>`).join("");
+}
+async function load() {
+  const r = await fetch(`/api/review/report?kind=${q.get("kind")}&path=${encodeURIComponent(q.get("path"))}`);
+  R = await r.json(); if (R.error) { document.body.innerHTML = esc(R.error); return; }
+  $("#src").textContent = `${R.source} · ${R.renders} renders · ${R.checked} vision-checked · ${R.rated} rated`;
+  BY = R.by.version.length > 1 ? "version" : R.by.checkpoint.length > 1 ? "checkpoint" : "version";
+  table();
+  $("#lessons").innerHTML = R.lesson_candidates.length ? R.lesson_candidates.map(l => `<div class="lesson"><b>${esc(l.label)}</b> - ${l.count} render${l.count === 1 ? "" : "s"}
+    <div class="ex">${l.examples.map(e => `<div><img src="${thumb(e.file, 340)}" alt="" title="${esc(e.prompt)}"><br>${esc(e.note)}</div>`).join("")}</div></div>`).join("")
+    : '<div class="muted">none yet - run Check renders (with "vs source") on this sweep first</div>';
+  $("#yours").innerHTML = R.your_lessons.length ? R.your_lessons.map(l => `<div class="lesson"><b>${esc(l.name)}</b>: ${esc(l.note)}</div>`).join("")
+    : '<div class="muted">none - tick "prompt-writing lesson" under a note in Review</div>';
+}
+$("#tabs").onclick = e => { const b = e.target.closest("button[data-k]"); if (b) { BY = b.dataset.k; table(); } };
+load();
+</script>
+</body>
+</html>

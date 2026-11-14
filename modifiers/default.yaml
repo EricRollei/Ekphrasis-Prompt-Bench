@@ -1,0 +1,37 @@
+# Run-wide modifier chips. {value} is filled in when the chip is used (CLI: --mod id="value").
+- id: ignore_text
+  name: Ignore text
+  text: Ignore all text, lettering, captions and typography in the image; do not mention them.
+- id: ignore_watermarks
+  name: Ignore watermarks
+  text: Ignore watermarks, signatures, logos, borders and UI overlays; do not mention them.
+- id: add_text
+  name: Add text
+  text: "Add this text to the picture, exactly as written: \"{value}\". Put it in double quotes in the prompt and describe its lettering style, colour and placement so it belongs naturally in the scene."
+- id: replace_subject
+  name: Replace main subject
+  text: "Replace the main subject with: {value}. Keep the pose, composition, lighting and setting of the image."
+- id: change_style
+  name: Change style
+  text: "Keep the content and composition, but write the prompt for this style instead: {value}."
+- id: change_setting
+  name: Change setting
+  text: "Move the scene to this setting: {value}. Keep the subjects, poses and mood."
+- id: change_era
+  name: Change era
+  text: "Move the scene to this era: {value}, updating clothing, objects and setting to match."
+- id: change_lighting
+  name: Change lighting
+  text: "Use this lighting instead of what the image shows: {value}."
+- id: change_palette
+  name: Change palette
+  text: "Use this colour palette: {value}."
+- id: keep_identity_generic
+  name: No identities
+  text: Do not name or guess the identity of any real person; describe their appearance only.
+- id: extra_detail
+  name: Extra detail
+  text: Spend most of the length on fine detail - materials, textures, small objects, micro-expressions.
+- id: free
+  name: Free instruction
+  text: "{value}"

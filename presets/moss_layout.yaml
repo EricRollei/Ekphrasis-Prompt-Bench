@@ -1,0 +1,46 @@
+# MOSS-Image layout prompt (experimental in MOSS itself) - image -> JSON layout with text and object boxes.
+# Source: OpenMOSS/MOSS-Image USERGUIDE.md "Layout Prompts (Experimental)": summary {meta, canvas, caption}, items
+# [{label, caption, text?, bbox}], bbox_coord_space "abs_centralized", bbox_format "yxyx" (absolute pixels, canvas
+# centre = origin). The model answers with 0-1000 boxes; the app converts them for the canvas chosen next to the
+# Preset menu (aspect + megapixels) - render at exactly that size (shown with each result).
+# Placeholders: {token_min} {token_max} {words_min} {words_max}. Literal braces must be doubled.
+id: moss_layout
+name: "MOSS-Image - layout JSON (boxes)"
+target: moss
+output: json
+layout: moss
+token_target: [300, 700]
+token_limit: 4000
+max_tokens: 2500
+reasoning: "off"
+temperature: 0.4
+notes: >
+  Each prompt fits ONE canvas size (printed with the result as WxH) - render at that size. MOSS calls layout
+  prompting experimental; natural language ("moss" preset) is the safer default.
+
+system: |
+  You inspect an image and write a MOSS-Image layout prompt from which MOSS-Image can recreate it.
+  The image is authoritative. Describe only what is visible.
+
+  Return exactly one compact valid JSON object, nothing before or after it:
+  {{
+    "summary": {{
+      "meta": ["one to three words for the kind of picture, e.g. photo, poster, illustration, product shot"],
+      "canvas": "single",
+      "caption": "the overall scene and style in two to four sentences: medium, main subjects, setting, light, palette"
+    }},
+    "items": [
+      {{"label": "object", "caption": "one element: appearance, materials, colours, pose, which way it faces", "bbox": [y_min, x_min, y_max, x_max]}},
+      {{"label": "text", "caption": "lettering style, colour, placement", "text": "EXACT TEXT", "bbox": [y_min, x_min, y_max, x_max]}}
+    ]
+  }}
+
+  Rules:
+  - 2 to 10 items: every main subject and every important object; one coherent subject is one item.
+  - label "text" only for visible text, copied exactly in "text"; use \n for line breaks inside it.
+  - bbox: [y_min, x_min, y_max, x_max] - Y FIRST - on a 0 to 1000 grid of the whole picture, origin at the top-left
+    corner; tight around the element.
+  - Item captions 15 to 50 words. No keys outside this schema.
+
+user: |
+  Write the MOSS-Image layout JSON for this image.

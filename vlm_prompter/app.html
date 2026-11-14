@@ -1,0 +1,1801 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VLM Prompter</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232f5d8a'/%3E%3Ctext x='8' y='12' font-size='10' text-anchor='middle' fill='white' font-family='sans-serif'%3EP%3C/text%3E%3C/svg%3E">
+<style>
+:root {
+  --bg:#f6f4ef; --panel:#ffffff; --fg:#1f1f1d; --muted:#7a776f; --line:#e2ded4; --soft:#efece4;
+  --accent:#2f5d8a; --accent-fg:#ffffff; --accent-soft:#dde7f2; --warn:#a85a14; --good:#2e7d4f; --bad:#b03a2e; --star:#d39a12;
+  --divider:#c9c2b2; --well:#e9e5dc;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#151617; --panel:#1e2022; --fg:#e8e6e1; --muted:#9a978f; --line:#33363a; --soft:#26292c;
+          --accent:#7fa8d6; --accent-fg:#10161d; --accent-soft:#24364a; --warn:#e0a060; --good:#6cc28f; --bad:#e07a6e; --star:#f0c050;
+          --divider:#4a4e54; --well:#121314; }
+}
+* { box-sizing:border-box; }
+html, body { height:100%; }
+body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; display:flex; flex-direction:column; }
+button, select, input, textarea { font:inherit; color:inherit; }
+button { background:var(--soft); border:1px solid var(--line); border-radius:6px; padding:3px 10px; cursor:pointer; }
+button:hover { border-color:var(--accent); }
+button:disabled { opacity:.45; cursor:default; }
+button.primary { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); font-weight:600; }
+button.danger { background:var(--bad); color:#fff; border-color:var(--bad); font-weight:600; }
+button.on { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); }
+select, input[type=text], input[type=number], textarea { background:var(--soft); border:1px solid var(--line); border-radius:6px; padding:3px 7px; }
+input:focus, textarea:focus, select:focus { outline:none; border-color:var(--accent); background:var(--panel); }
+.muted { color:var(--muted); }
+label { cursor:pointer; }
+
+header { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:8px 14px; border-bottom:2px solid var(--divider); background:var(--panel); box-shadow:0 2px 4px rgba(0,0,0,.06); position:relative; z-index:5; }
+header h1 { font-size:15px; margin:0 10px 0 0; letter-spacing:.2px; }
+header #model { max-width:480px; }
+header #fav { font-size:16px; padding:1px 8px; color:var(--star); }
+header .mstate { max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12.5px; }
+header #mode { max-width:300px; }
+
+.layout { flex:1; min-height:0; display:grid; grid-template-columns:375px minmax(320px, 1fr) minmax(560px, 32vw); }
+.layout > section { min-height:0; overflow:auto; border-right:2px solid var(--divider); }
+#folders, #right { background:var(--panel); }
+#grid { background:var(--well); }               /* the gallery sits in a darker well between the two panels */
+.tools { position:sticky; top:0; background:var(--panel); padding:8px 10px; border-bottom:2px solid var(--divider); display:flex; flex-wrap:wrap; gap:6px; align-items:center; z-index:2; }
+
+/* folders column */
+#folders .pathrow { display:flex; gap:6px; width:100%; }
+#folders #path { flex:1; min-width:0; font-size:12.5px; }
+#folders .drives { display:flex; flex-wrap:wrap; gap:4px; width:100%; }
+#folders .drives button { padding:1px 8px; font-size:12px; }
+#folders .sect { padding:10px 10px 4px; font-size:11.5px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); }
+#folders .f { padding:5px 10px; cursor:pointer; font-size:13px; border-bottom:1px solid var(--soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#folders .f:hover { background:var(--soft); }
+#folders .f.up { color:var(--muted); }
+#folders .cur { padding:7px 10px; font-weight:600; background:var(--accent-soft); border-left:4px solid var(--accent); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#folders .cur .muted { font-weight:400; font-size:12px; }
+#gridInfo b { color:var(--fg); }
+#folders .hint { padding:10px; font-size:12.5px; color:var(--muted); }
+
+/* gallery (virtual grid) */
+#grid { position:relative; }
+#grid .cards { position:relative; margin:10px; }
+#grid #cardsIn { display:grid; gap:8px; position:absolute; left:0; right:0; top:0; will-change:transform; }
+#grid .card { background:var(--panel); border:2px solid transparent; border-radius:8px; overflow:hidden; cursor:pointer; position:relative; user-select:none; }
+#grid .card.sel { border-color:var(--accent); background:var(--accent-soft); }
+#grid .card.queued::after { content:"in queue"; position:absolute; top:4px; left:4px; font-size:10px; background:var(--accent); color:var(--accent-fg); border-radius:4px; padding:0 5px; }
+#grid .card img { width:100%; aspect-ratio:1; object-fit:contain; background:var(--soft); display:block; }
+#grid .card .nm { font-size:11px; height:18px; line-height:18px; padding:0 6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#grid .card .dot { position:absolute; top:6px; right:6px; width:10px; height:10px; border-radius:50%; background:var(--good); border:2px solid var(--panel); }
+#grid .empty { padding:40px; text-align:center; color:var(--muted); }
+
+/* right column */
+#right { border-right:none; display:flex; flex-direction:column; overflow:hidden; }
+.runbar { display:flex; gap:10px; align-items:center; padding:8px 12px; background:var(--panel); border-bottom:1px solid var(--line); }
+.tabs { border-bottom:2px solid var(--divider) !important; }
+.runbar #runBtn { min-width:120px; }
+.runbar .bar { flex:1; height:6px; background:var(--soft); border-radius:3px; overflow:hidden; min-width:60px; }
+.runbar .bar > div { height:100%; width:0; background:var(--accent); transition:width .3s; }
+.runbar .progress { color:var(--muted); font-size:12.5px; white-space:nowrap; max-width:220px; overflow:hidden; text-overflow:ellipsis; }
+.runbar label { font-size:13px; white-space:nowrap; }
+
+/* tabs look like tabs: no box, an underline on the active one */
+.tabs { display:flex; gap:0; padding:0 8px; background:var(--panel); border-bottom:1px solid var(--line); }
+.tabs .tab { background:none; border:none; border-bottom:3px solid transparent; border-radius:0; padding:8px 14px 6px; color:var(--muted); font-weight:600; }
+.tabs .tab:hover { color:var(--fg); border-color:transparent; border-bottom-color:var(--line); }
+.tabs .tab.on { color:var(--fg); border-bottom-color:var(--accent); }
+.tabs .tab .n { font-weight:400; color:var(--muted); }
+#right .pane { flex:1; overflow:auto; display:none; }
+#right .pane.on { display:block; }
+
+.q { display:grid; grid-template-columns:150px minmax(0, 1fr); gap:10px; padding:8px 10px; border-bottom:1px solid var(--line); }
+.q > div { min-width:0; }                       /* long names/prompts never push the row wider than the column */
+.q .side { display:flex; flex-direction:column; gap:4px; }
+.q .strip { display:flex; align-items:center; gap:8px; min-height:20px; flex-wrap:wrap; }
+.q .strip .rm { margin-left:auto; }
+.q img { width:150px; height:150px; object-fit:contain; background:var(--soft); border-radius:6px; cursor:zoom-in; }
+.q .nm { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; font-weight:600; }
+.q .flags { display:flex; gap:8px; font-size:12px; }
+.q .note { width:100%; margin:4px 0; font-size:12px; }
+.q textarea.p { width:100%; min-height:90px; font-size:12.5px; resize:vertical; margin-top:3px; }
+.q .stats { font-size:11.5px; color:var(--muted); }
+/* status = plain text, never boxed */
+.st { font-size:12px; font-weight:600; }
+.st.ok { color:var(--good); } .st.cached { color:var(--accent); } .st.error { color:var(--bad); }
+.st.running { color:var(--warn); } .st.skipped { color:var(--muted); } .st.unsaved { color:var(--warn); font-weight:400; } .st.warn { color:var(--warn); font-weight:400; }
+.rm { background:none; border:none; color:var(--muted); padding:0 4px; font-size:14px; }
+.redo { font-size:12px; color:var(--muted); white-space:nowrap; display:flex; align-items:center; gap:3px; }
+.redo.on { color:var(--accent); font-weight:600; }
+.rm:hover { color:var(--bad); }
+.pager { display:flex; gap:8px; align-items:center; padding:6px 10px; border-bottom:1px solid var(--line); font-size:13px; }
+.empty-q { padding:30px 24px; text-align:center; color:var(--muted); line-height:1.7; }
+.runinstr { padding:8px 10px 10px; border-bottom:2px solid var(--divider); background:var(--accent-soft); }
+.runinstr .ri-head { font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.4px; margin-bottom:6px; }
+.runinstr .ri-head .muted { text-transform:none; letter-spacing:0; font-weight:400; }
+.runinstr .chips button { font-size:12.5px; padding:2px 9px; background:var(--panel); }
+.runinstr .chips button.on { background:var(--accent); color:var(--accent-fg); }
+.runinstr #runNote { width:100%; margin-top:6px; font-size:12.5px; resize:vertical; background:var(--panel); }
+
+.form { padding:10px 14px 30px; }
+.form h3 { font-size:12px; margin:16px 0 6px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); }
+.form .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:6px 0; }
+.form .opt { margin:8px 0; }
+.form .opt .where { margin:4px 0 0 24px; font-size:12.5px; color:var(--muted); }
+.form .opt .where input[type=text] { width:100%; margin-top:3px; font-size:12.5px; }
+.chips { display:flex; flex-wrap:wrap; gap:6px; }
+.chip { display:flex; gap:4px; align-items:center; }
+.chip input[type=text] { width:220px; font-size:12px; }
+textarea.code { width:100%; font:12px/1.4 ui-monospace, Consolas, monospace; min-height:300px; resize:vertical; }
+pre.preview { white-space:pre-wrap; font:12px/1.4 ui-monospace, Consolas, monospace; background:var(--soft); padding:8px; border-radius:6px; max-height:360px; overflow:auto; }
+table.plan { width:100%; border-collapse:collapse; font-size:12.5px; margin-top:6px; }
+table.plan td, table.plan th { border-bottom:1px solid var(--line); padding:3px 5px; text-align:left; vertical-align:top; }
+table.plan input { width:100%; font-size:12px; }
+table.plan .src { color:var(--muted); font-size:11px; word-break:break-all; }
+.written div { font-size:12.5px; display:flex; gap:8px; align-items:baseline; padding:3px 0; word-break:break-all; }
+.written a { color:var(--accent); cursor:pointer; white-space:nowrap; }
+
+#drop { position:fixed; inset:0; background:color-mix(in srgb, var(--accent) 20%, transparent); border:4px dashed var(--accent); display:none; align-items:center; justify-content:center; font-size:24px; z-index:50; pointer-events:none; }
+body.dragging #drop { display:flex; }
+#viewer { position:fixed; inset:0; background:rgba(0,0,0,.85); display:none; align-items:center; justify-content:center; z-index:60; cursor:zoom-out; }
+#viewer img { max-width:95vw; max-height:95vh; }
+#toast { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:var(--fg); color:var(--bg); padding:6px 14px; border-radius:6px; display:none; z-index:70; font-size:13px; max-width:80vw; }
+
+/* ================================================================ Review mode */
+.modes { display:flex; gap:0; margin-right:10px; border:1px solid var(--divider); border-radius:7px; overflow:hidden; }
+.modes button { border:none; border-radius:0; background:var(--panel); padding:4px 14px; font-weight:600; color:var(--muted); }
+.modes button.on { background:var(--accent); color:var(--accent-fg); }
+.rv { display:none !important; }
+body.mode-review .rv { display:block !important; }
+body.mode-review #folders, body.mode-review #grid, body.mode-review #right { display:none !important; }
+body.mode-review .gen-only { display:none !important; }
+#rvSources { background:var(--panel); }
+#rvSources .src { padding:6px 10px; border-bottom:1px solid var(--soft); cursor:pointer; font-size:12.5px; }
+#rvSources .src:hover { background:var(--soft); }
+#rvSources .src.on { background:var(--accent-soft); border-left:4px solid var(--accent); }
+#rvSources .src .t { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#rvSources .src .m { color:var(--muted); font-size:11.5px; display:flex; gap:8px; }
+#rvSources .src .x { float:right; }
+#rvSources .sect { padding:10px 10px 4px; font-size:11.5px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); }
+#rvGrid { background:var(--well); }
+#rvRows { padding:8px 10px 40px; }
+.rvrow { background:var(--panel); border:1px solid var(--line); border-radius:8px; margin-bottom:10px; padding:8px; content-visibility:auto; contain-intrinsic-size:auto 320px; }
+.rvrow .rh { font-size:12.5px; margin-bottom:6px; display:flex; gap:10px; align-items:baseline; }
+.rvrow .rh .pt { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rvrow .rh .pv { color:var(--muted); font-size:11.5px; white-space:nowrap; }
+.rvcards { display:flex; flex-wrap:wrap; gap:8px; }
+.rvc { width:var(--rvw,220px); border:2px solid transparent; border-radius:7px; background:var(--soft); cursor:pointer; position:relative; }
+.rvc.sel { border-color:var(--accent); }
+.rvc img { width:100%; aspect-ratio:1; object-fit:contain; display:block; background:var(--soft); border-radius:5px 5px 0 0; }
+.rvc .cap { font-size:11px; padding:2px 5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); }
+.rvc .bd { position:absolute; top:4px; left:4px; display:flex; gap:3px; }
+.rvc .bd span { font-size:11px; font-weight:700; background:rgba(0,0,0,.65); color:#fff; border-radius:4px; padding:0 5px; }
+.rvc .bd .k { background:var(--good); } .rvc .bd .d { background:var(--bad); }
+#rvDetail { background:var(--panel); overflow:auto; border-right:none; }
+#rvDetail .pad { padding:10px 12px 40px; }
+body.mode-review .layout { grid-template-columns:300px minmax(320px, 1fr) 50vw; }   /* review only */
+#rvDetail .imgs { display:grid; grid-template-columns:1fr 1fr; gap:10px; align-items:start; }
+#rvDetail .imgs img { max-height:62vh; object-fit:contain; }
+#rvDetail .imgs img { width:100%; border-radius:6px; background:var(--soft); cursor:zoom-in; display:block; }
+#rvDetail .imgs .lbl { font-size:11px; color:var(--muted); margin-top:2px; }
+#rvDetail h4 { font-size:11.5px; margin:12px 0 5px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); }
+#rvDetail .stars button { font-size:20px; padding:0 6px; background:none; border:none; color:var(--muted); }
+#rvDetail .stars button.on { color:var(--star); }
+#rvDetail .tog { display:flex; flex-wrap:wrap; gap:6px; }
+#rvDetail .tog button { font-size:12.5px; padding:2px 9px; }
+#rvDetail .tog button.on { background:var(--bad); color:#fff; border-color:var(--bad); }
+#rvDetail .tog button.keep.on { background:var(--good); border-color:var(--good); }
+#rvDetail .tog kbd, .rvhelp kbd { font:11px ui-monospace, Consolas, monospace; border:1px solid var(--line); border-radius:3px; padding:0 3px; margin-left:4px; color:var(--muted); }
+#rvDetail .prompt { font-size:12.5px; background:var(--soft); border-radius:6px; padding:8px; max-height:260px; overflow:auto; white-space:pre-wrap; }
+#rvDetail .kv { font-size:12px; color:var(--muted); line-height:1.6; word-break:break-all; }
+#rvDetail .kv b { color:var(--fg); font-weight:600; }
+#rvDetail .nav { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+.rvc .bd .a { background:#2f5d8a; } .rvc .bd .a.lo { background:var(--warn); } .rvc .bd .f { background:#5b4a8a; }
+#rvDetail .tog button.sug { border:2px dashed var(--bad); }
+#rvVision .score { font-size:20px; font-weight:700; margin-right:8px; }
+#rvVision .it { font-size:12.5px; display:grid; grid-template-columns:22px 1fr; gap:4px; padding:2px 0; }
+#rvVision .it .k { color:var(--muted); font-size:11px; }
+#rvVision .y { color:var(--good); } #rvVision .p { color:var(--warn); } #rvVision .n { color:var(--bad); }
+#rvVision .beyond { color:var(--bad); font-size:11px; font-weight:600; }
+.rvhelp { font-size:11.5px; color:var(--muted); padding:6px 10px; border-top:1px solid var(--line); }
+
+#pbPane { display:none; flex-direction:column; gap:8px; padding:10px 12px; overflow:auto; border-left:1px solid var(--line); min-height:0; }
+body.mode-photobash #pbPane { display:flex; }
+body.mode-photobash #right { display:none; }
+.pbhead { display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
+.pbadd, .pbopts, .pbrun, .pbsave { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.pbslot { display:grid; grid-template-columns:110px 1fr; gap:10px; padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--panel, transparent); }
+.pbthumb img { width:110px; height:110px; object-fit:cover; border-radius:6px; }
+.pbfolder { width:110px; height:110px; display:flex; align-items:center; justify-content:center; border-radius:6px; background:var(--soft); font-weight:600; }
+.pbpath { font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pbw { display:flex; gap:6px; align-items:center; font-size:12.5px; margin:4px 0; }
+.pbw input[type=range] { flex:1; }
+.pbfac { display:flex; flex-wrap:wrap; gap:4px; }
+.pbfac button { font-size:11.5px; padding:1px 7px; }
+.pbfac button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+.pbres { display:flex; flex-direction:column; gap:8px; }
+.pbr { border:1px solid var(--line); border-radius:8px; padding:8px; }
+.pbrh { display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:12.5px; margin-bottom:4px; }
+.pbsrc img { width:34px; height:34px; object-fit:cover; border-radius:4px; margin-right:2px; vertical-align:middle; }
+.pbtext { font-size:13px; line-height:1.45; white-space:pre-wrap; outline:none; }
+
+#idPane { display:none; grid-column:1 / -1; gap:16px; padding:10px 14px; min-height:0; overflow:auto; }
+body.mode-ideas #idPane { display:grid; grid-template-columns:minmax(360px, 520px) 1fr; }
+body.mode-ideas #folders, body.mode-ideas #grid, body.mode-ideas #right, body.mode-ideas #pbPane { display:none !important; }
+body.mode-ideas .layout { grid-template-columns:1fr; }
+.idcol { display:flex; flex-direction:column; gap:8px; min-width:0; }
+.idtabs { display:flex; gap:4px; } .idtabs button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+.idhits { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; max-height:160px; overflow:auto; }
+.idhits button { font-size:11.5px; padding:1px 7px; }
+
+#rwPane { display:none; grid-column:1 / -1; gap:16px; padding:10px 14px; min-height:0; overflow:auto; }
+body.mode-rewrite #rwPane { display:grid; grid-template-columns:minmax(380px, 540px) 1fr; }
+body.mode-rewrite #folders, body.mode-rewrite #grid, body.mode-rewrite #right, body.mode-rewrite #pbPane, body.mode-rewrite #idPane { display:none !important; }
+body.mode-rewrite .layout { grid-template-columns:1fr; }
+.rwflag { border-color:var(--warn) !important; }
+.rwbadge { display:inline-block; font-size:11px; padding:0 6px; border-radius:8px; background:var(--warn); color:#fff; margin-right:3px; }
+.rwdiff { font-size:12.5px; line-height:1.5; margin-top:6px; padding:6px; background:var(--soft); border-radius:6px; }
+.rwdiff del { color:var(--bad); text-decoration:line-through; } .rwdiff ins { color:var(--good); text-decoration:none; font-weight:600; }
+</style>
+</head>
+<body>
+<header>
+  <h1>VLM Prompter</h1>
+  <div class="modes"><button data-mode="generate" class="on">Generate</button><button data-mode="photobash">Photobash</button><button data-mode="ideas">Ideas</button><button data-mode="rewrite">Rewrite</button><button data-mode="review">Review</button></div>
+  <select id="model" title="Which LM Studio model writes the prompts (● = loaded now)"></select>
+  <button id="fav" title="Mark this model as a favourite">☆</button>
+  <button id="refreshModels" title="Re-read the model list and what LM Studio has loaded">⟳</button>
+  <span id="modelState" class="muted mstate"></span>
+  <button id="loadBtn" title="Load the selected model in LM Studio now (unloads the current one)">Load</button>
+  <label class="muted" title="Context length used when this app loads a model">ctx <input type="number" id="ctx" value="21000" step="1024" min="2048" style="width:84px"></label>
+  <button id="ejectBtn" title="Unload the model from LM Studio">Eject</button>
+  <label class="muted" title="Also list text-only models"><input type="checkbox" id="allTypes"> text-only too</label>
+  <span class="muted" style="margin-left:10px">Thinking</span>
+  <select id="mode" title="Reasoning mode - the choices come from this model's own chat template"></select>
+  <span class="muted" style="margin-left:10px">Preset</span>
+  <select id="preset" title="What kind of prompt to write"></select><span id="lyBox" style="display:none" title="Layout presets: boxes are converted to pixels for this canvas - render at the size shown with each result">canvas <select id="lyAspect"><option value="source">source aspect</option><option>1:1</option><option>4:3</option><option>3:2</option><option>16:9</option><option>21:9</option><option>3:4</option><option>2:3</option><option>9:16</option></select> <input type="number" id="lyMP" value="1.0" min="0.25" max="4" step="0.25" style="width:56px"> MP</span>
+</header>
+
+<div class="layout">
+
+  <!-- ============================================================ Review mode (3 columns, hidden in Generate mode) -->
+  <section id="rvSources" class="rv">
+    <div class="tools">
+      <div class="pathrow" style="display:flex;gap:6px;width:100%">
+        <input type="text" id="rvAddPath" placeholder="add an image folder (paste path)" style="flex:1;min-width:0;font-size:12.5px">
+        <button id="rvAdd">Add</button>
+      </div>
+      <input type="text" id="rvSrcFilter" placeholder="filter sweeps" style="width:100%;font-size:12.5px">
+    </div>
+    <div id="rvSrcList"></div>
+  </section>
+  <section id="rvGrid" class="rv">
+    <div class="tools">
+      <span id="rvInfo" class="muted">pick a sweep or folder on the left</span>
+      <label class="muted"><input type="checkbox" id="rvUnrated"> unrated</label>
+      <label class="muted"><input type="checkbox" id="rvFlagged"> with defects</label>
+      <label class="muted"><input type="checkbox" id="rvKeepers"> keepers</label>
+      <input type="text" id="rvText" placeholder="filter prompt / checkpoint" style="width:170px">
+      <label class="muted" title="Only renders the vision check flagged: adherence under 70 or a suggested defect"><input type="checkbox" id="rvIssues"> vision issues</label>
+      <button id="rvExport" title="Write review_ratings_<date>.csv into the sweep / folder">Export CSV</button>
+      <button class="primary" id="rvCheck" title="Vision-check every render not checked yet, with the model chosen at the top (default: the one loaded in LM Studio)">Check renders</button>
+      <label class="muted" title="Also compare each render with its source image (needs the source; doubles the time)"><input type="checkbox" id="rvFid" checked> vs source</label>
+      <label class="muted" title="Check again renders that were already checked"><input type="checkbox" id="rvRedo"> redo</label>
+      <span class="muted" id="rvCheckState"></span>
+      <a id="rvReport" href="#" style="color:var(--accent);font-size:13px;margin-right:8px" title="Report for this sweep / folder: by version, checkpoint, preset, model; lesson candidates">report ↗</a>
+      <a href="/audit" target="_blank" style="color:var(--accent);font-size:13px" title="Compare the vision model with the pose / face detectors on your source images">audit ↗</a>
+      <span class="muted" style="margin-left:auto">size</span>
+      <input type="range" id="rvSize" min="120" max="420" value="220">
+    </div>
+    <div id="rvRows"></div>
+  </section>
+  <section id="rvDetail" class="rv">
+    <div class="pad" id="rvPane"><div class="muted" style="padding:30px 10px">Select a render to rate it.</div></div>
+    <div class="rvhelp">Keys: <kbd>←</kbd><kbd>→</kbd> previous / next · <kbd>1</kbd>-<kbd>5</kbd> stars (<kbd>0</kbd> clears) ·
+      <kbd>k</kbd> keeper · defect letters as shown · <kbd>Enter</kbd> full view · <kbd>Esc</kbd> close</div>
+  </section>
+  <section id="folders">
+    <div class="tools">
+      <div class="pathrow">
+        <input type="text" id="path" placeholder="paste a folder (or image) path">
+        <button id="go">Go</button>
+      </div>
+      <div class="drives" id="drives"></div>
+      <button id="addFolder" title="Put every image in the current folder into the queue">+ Add this folder to queue</button>
+      <label class="muted"><input type="checkbox" id="recursive" checked> with subfolders</label>
+    </div>
+    <div id="dirs"></div>
+  </section>
+
+  <section id="grid">
+    <div class="tools">
+      <span id="gridInfo" class="muted">open a folder on the left</span>
+      <button id="selAll" title="Select every image shown (Ctrl+A)">all</button>
+      <button id="selNone" title="Clear the selection (Esc)">none</button>
+      <button class="primary" id="addSel" disabled>+ Add selected</button>
+      <input type="text" id="filter" placeholder="filter names" style="width:130px">
+      <span class="muted" style="margin-left:auto">size</span>
+      <input type="range" id="tw" min="90" max="320" value="150">
+    </div>
+    <div class="cards" id="cards"><div id="cardsIn"></div></div>
+  </section>
+
+  <section id="rwPane">
+    <div class="idcol">
+      <div class="pbhead"><b>Rewrite</b> <span class="muted">rewrites come out in the format and length of the preset chosen at the top</span></div>
+      <div style="display:flex;gap:6px">
+        <input type="text" id="rwPath" placeholder="prompt list file (.txt one per line, or .jsonl)" style="flex:1">
+        <button id="rwLoad">Load</button>
+      </div>
+      <textarea id="rwPaste" rows="4" placeholder="...or paste prompts here (one per line, or separated by blank lines)"></textarea>
+      <div style="display:flex;gap:8px;align-items:center"><button id="rwUsePaste">Use pasted</button><span class="muted" id="rwCount">no prompts loaded</span></div>
+      <div class="idtabs" id="rwOps">
+        <button data-op="convert" title="Only the format and length change (e.g. SDXL tags -> Krea 2 prose)">convert</button>
+        <button data-op="edit" title="Apply a change to every prompt (style, subject, mood, era ...)">edit</button>
+        <button data-op="refine" title="Check each prompt against its source image and correct it (needs the image)">refine with image</button>
+        <button data-op="rules" title="Apply one or more rules to every prompt">rules</button>
+        <button data-op="variations" title="Several different takes per prompt">variations</button>
+        <button data-op="pair" title="Minimal-edit twins for blend / concept-direction pairs: only the words for one change differ. Saves two line-aligned files _A and _B">pair</button>
+      </div>
+      <div id="rwEditBox">
+        <textarea id="rwInstr" rows="2" placeholder="the change, e.g. change the style to a professional fashion photograph"></textarea>
+        <div class="pbfac" id="rwChips"></div>
+      </div>
+      <textarea id="rwRules" rows="3" placeholder="rules, one per line, e.g. state which way each person faces (toward the viewer, left or right side of the picture)"></textarea>
+      <label id="rwFactsBox"><input type="checkbox" id="rwFacts"> add measured head directions (pose detectors)</label>
+      <label id="rwVarBox">variations per prompt <input type="number" id="rwVar" value="3" min="1" max="10" style="width:56px"></label>
+      <div class="pbopts">
+        <label title="faithful: keep the input's words where they fit.&#10;fresh: avoid the most predictable phrasing, specific less common but accurate words.&#10;bold: a distinctive art-director voice, no stock phrases">word choice
+          <select id="rwWords"><option value="faithful">faithful</option><option value="fresh" selected>fresh</option><option value="bold">bold</option></select></label>
+        <label title="Words and names that must survive exactly (LoRA triggers, names), comma separated">keep exactly <input type="text" id="rwKeep" placeholder="trigger words, names" style="width:220px"></label>
+      </div>
+      <div class="pbrun"><button class="primary" id="rwRun">Rewrite</button><button id="rwClearRes" title="Empty the results list">clear results</button><span class="muted" id="rwState"></span></div>
+    </div>
+    <div class="idcol">
+      <div style="display:flex;gap:10px;align-items:center">
+        <label class="muted"><input type="checkbox" id="rwFlagged"> flagged only</label>
+        <span class="muted" id="rwSummary"></span>
+      </div>
+      <div class="pbres" id="rwResults"></div>
+      <div class="pbsave">
+        <input type="text" id="rwName" placeholder="rewrite_<date> (in the prompt lists folder)" style="flex:1">
+        <button id="rwSaveKept">Save ticked</button><button id="rwSaveAll">Save all</button>
+      </div>
+    </div>
+  </section>
+  <section id="idPane">
+    <div class="idcol">
+      <div class="pbhead"><b>Ideas</b> <span class="muted">prompt lists without images, written for the preset chosen at the top</span></div>
+      <div class="idtabs">
+        <button data-idm="brief" title="The model writes many distinct takes on your brief">brief</button>
+        <button data-idm="dice" title="Each idea gets a random roll of genre, era, medium, light, palette, mood, camera, place - optionally on top of a brief">dice</button>
+        <button data-idm="wildcards" title="Fill a template with your wildcard files (__name__) and {a|b|c} choices">wildcards</button>
+      </div>
+      <textarea id="idBrief" rows="3" placeholder="brief, e.g. a lantern procession on a frozen lake (optional in dice mode)"></textarea>
+      <div id="idDiceBox">
+        <div class="muted" style="font-size:12px;margin:2px 0">roll these:</div>
+        <div class="pbfac" id="idDice"></div>
+      </div>
+      <div id="idWcBox">
+        <textarea id="idTemplate" rows="4" placeholder="template, e.g. a __facialExpressionsFor_v10__ {knight|dancer|astronaut} in __fatalFrameBackground_v10__, __cameraAngleBible_v11__"></textarea>
+        <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
+          <input type="text" id="idWcSearch" placeholder="find a wildcard file (type part of its name)" style="flex:1">
+          <label title="Let the model turn each filled template into a full prompt in the preset's format; off = the filled text is the prompt"><input type="checkbox" id="idPolish" checked> polish with the model</label>
+        </div>
+        <div id="idWcHits" class="idhits"></div>
+      </div>
+      <div class="pbopts">
+        <label>how many <input type="number" id="idCount" value="8" min="1" max="500" style="width:64px"></label>
+        <label title="Higher = more varied, stranger ideas">temperature <input type="number" id="idTemp" value="1.0" min="0" max="2" step="0.05" style="width:64px"></label>
+        <label title="Same seed = same rolls / wildcard picks">seed <input type="text" id="idSeed" placeholder="random" style="width:80px"></label>
+      </div>
+      <div class="pbrun"><button class="primary" id="idRun">Make ideas</button><button id="idClearRes" title="Empty the results list">clear results</button><span class="muted" id="idState"></span></div>
+    </div>
+    <div class="idcol">
+      <div class="pbres" id="idResults"></div>
+      <div class="pbsave">
+        <input type="text" id="idName" placeholder="ideas_<date> (in the prompt lists folder)" style="flex:1">
+        <button id="idToRw" title="Send the ticked ideas to the Rewrite tab">→ Rewrite</button>
+        <button id="idSaveKept">Save ticked</button><button id="idSaveAll">Save all</button>
+      </div>
+    </div>
+  </section>
+  <section id="pbPane">
+    <div class="pbhead">
+      <b>Photobash</b>
+      <span class="muted">several pictures → one new picture, written for the preset chosen at the top</span>
+    </div>
+    <div class="pbadd">
+      <button id="pbAddSel" title="Add the images selected in the gallery as sources">+ selected images</button>
+      <button id="pbAddFolder" title="Add the folder open in the gallery as a POOL: each mix draws a random image from it">+ this folder as pool</button>
+      <button id="pbClear">clear sources</button>
+    </div>
+    <div id="pbSlots"></div>
+    <div class="pbopts">
+      <label title="blend: the model fuses all sources at once, weights say how strongly each shapes the result.&#10;draw: for each mix every aspect (subject, setting, light ...) is drawn from one source with probability = weight - many mixes give many combinations">mode
+        <select id="pbMode"><option value="blend">blend</option><option value="draw">draw</option></select></label>
+      <label>mixes <input type="number" id="pbMixes" value="4" min="1" max="200" style="width:60px"></label>
+      <label title="Higher = bolder, more varied fusions">temperature <input type="number" id="pbTemp" value="0.9" min="0" max="2" step="0.05" style="width:64px"></label>
+      <label title="Same seed + same sources = same draws and pool picks">seed <input type="text" id="pbSeed" placeholder="random" style="width:80px"></label>
+    </div>
+    <div class="pbopts" style="font-size:12.5px">
+      <label title="The new picture gets no text, lettering, signs or captions"><input type="checkbox" id="pbNoText" checked> no text or lettering</label>
+      <label title="No signatures, artist marks, watermarks, logos or overlays"><input type="checkbox" id="pbNoMarks" checked> no signatures / watermarks / logos</label>
+    </div>
+    <div class="pbopts" style="font-size:12.5px">
+      <label>add text <input type="text" id="pbAddText" placeholder="exact text to show in the picture (optional)" style="width:240px"></label>
+      <label>where <input type="text" id="pbTextWhere" placeholder="e.g. as a neon sign above the door" style="width:200px"></label>
+    </div>
+    <textarea id="pbNote" rows="2" placeholder="optional direction, e.g. make it a winter night, keep it photographic"></textarea>
+    <div class="pbrun">
+      <button class="primary" id="pbRun">Make mixes</button>
+      <button id="pbClearRes" title="Empty the results list (saved lists are not touched)">clear results</button>
+      <span class="muted" id="pbState"></span>
+    </div>
+    <div class="pbres" id="pbResults"></div>
+    <div class="pbsave">
+      <input type="text" id="pbName" placeholder="photobash_<date> (in the prompt lists folder)" style="flex:1">
+      <button id="pbToRw" title="Send the ticked mixes to the Rewrite tab">→ Rewrite</button>
+      <button id="pbSaveKept" title="Save the ticked mixes as one prompt list (one per line) with a .meta.jsonl">Save ticked</button>
+      <button id="pbSaveAll">Save all</button>
+    </div>
+  </section>
+  <section id="right">
+    <div class="runbar">
+      <button class="primary" id="runBtn">▶ Run queue</button>
+      <label title="Only images in the queue that don't have a prompt yet"><input type="checkbox" id="onlyNew" checked> only new</label>
+      <label title="Ask the model again even if this exact request was answered before (cache)"><input type="checkbox" id="force"> regenerate</label>
+      <div class="bar"><div id="bar"></div></div>
+      <span class="progress" id="progress">ready</span>
+    </div>
+    <div class="tabs">
+      <button class="tab on" data-tab="queue">Queue <span class="n" id="qCount"></span></button>
+      <button class="tab" data-tab="instr">Instructions</button>
+      <button class="tab" data-tab="save">Save</button>
+    </div>
+
+    <div class="pane on" id="pane-queue">
+      <div class="tools">
+        <button id="qToRw" title="Send the queue's prompts (with their images) to the Rewrite tab">→ Rewrite</button>
+        <button id="qRemoveAll" title="Take every image out of the queue">Remove all</button>
+        <button id="qDiscard" title="Keep the images in the queue but throw away their prompts, e.g. to run them again">Discard prompts</button>
+        <select id="qLists" title="Save this queue under a name, or open one saved earlier"><option value="">Saved queues...</option></select>
+      </div>
+      <div class="runinstr">
+        <div class="ri-head">For every image in the run <span class="muted" id="riSummary"></span></div>
+        <div class="chips" id="chips"></div>
+        <textarea id="runNote" rows="1" placeholder="extra instruction for every image, e.g. make the woman a red-haired man"></textarea>
+        <div style="margin-top:6px;font-size:12.5px">
+          <label title="Run the pose + face detectors on each image and give their facts (facing direction, people count, gender, age, expression) to the model with the image"><input type="checkbox" id="useFacts"> add measured facts (pose + face detectors)</label>
+          <label style="margin-left:12px" class="muted" title="Also pass the detector's ethnicity guess (the least reliable field)"><input type="checkbox" id="factsEth"> include ethnicity</label>
+        </div>
+      </div>
+      <div id="queue"></div>
+    </div>
+
+    <div class="pane" id="pane-instr">
+      <div class="form">
+        <div class="muted" style="font-size:12.5px;margin-top:6px">Instructions for every image (Ignore text, Replace subject, a note ...) are at the top of the Queue tab.</div>
+        <h3>Compare versions</h3>
+        <label title="Run writes one prompt per version for every queued image into one list for a sweep (versions of an image next to each other)"><input type="checkbox" id="cmpOn"> Run makes several versions instead of one prompt</label>
+        <div id="cmpBox" style="display:none;margin:6px 0 4px 22px;font-size:13px">
+          <div>presets: <span id="cmpPresets"></span></div>
+          <div style="margin-top:4px">measured head directions: <label><input type="checkbox" id="cmpNoFacts" checked> without</label> <label><input type="checkbox" id="cmpFacts" checked> with</label></div>
+          <div style="margin-top:4px">list name <input type="text" id="cmpName" placeholder="compare_<date> (in the prompt lists folder)" style="width:300px"></div>
+          <div class="muted" id="cmpCount" style="margin-top:4px"></div>
+        </div>
+        <h3>Settings</h3>
+        <div class="row">
+          <label>variations <input type="number" id="variations" min="1" max="8" value="1" style="width:56px"></label>
+          <label>temperature <input type="number" id="temperature" step="0.05" min="0" max="2" placeholder="preset" style="width:80px"></label>
+          <label>max tokens <input type="number" id="maxTokens" min="64" step="64" placeholder="preset" style="width:90px"></label>
+          <label>seed <input type="number" id="seed" placeholder="random" style="width:90px"></label>
+        </div>
+        <div class="row"><button id="composeBtn">Show the full instructions sent to the model</button><span class="muted" id="composeSha"></span></div>
+        <pre class="preview" id="composed" style="display:none"></pre>
+        <h3>Preset editor</h3>
+        <div class="row">
+          <span class="muted">editing</span> <b id="editId"></b>
+          <button id="presetSave">Save</button>
+          <input type="text" id="saveAsId" placeholder="new preset id" style="width:150px">
+          <button id="presetSaveAs">Save as new</button>
+          <button id="presetRevert">Revert</button>
+        </div>
+        <textarea class="code" id="presetText" spellcheck="false"></textarea>
+        <div class="muted" style="font-size:12px">Placeholders: {token_min} {token_max} {words_min} {words_max}. Literal braces must be doubled. Add <code>output: json</code> for presets whose answer is JSON. The previous version is kept in presets/.bak.</div>
+      </div>
+    </div>
+
+    <div class="pane" id="pane-save">
+      <div class="form">
+        <h3>When</h3>
+        <div class="row"><label><input type="checkbox" id="autoSave" checked> Save automatically when a run finishes</label></div>
+        <div class="row"><button class="primary" id="saveNow">Save now</button><span class="muted" id="saveInfo" style="font-size:12.5px"></span></div>
+
+        <h3>What to write</h3>
+        <div class="opt">
+          <label><input type="checkbox" id="mImage" checked> <b>Each prompt next to its image</b></label>
+          <div class="where">image.prompt.txt (image.prompt.json for JSON presets) in the image's own folder. Never overwrites: a second save makes image.2.prompt.txt.</div>
+        </div>
+        <div class="opt">
+          <label><input type="checkbox" id="mFolder"> <b>One list per folder</b></label>
+          <div class="where">into <input type="text" id="groupDir">
+            <div class="row"><label>group by <select id="groupBy"><option value="folder">each folder (generic folders like "images" merged up)</option><option value="depth:1">1st level below the start folder</option><option value="depth:2">2nd level</option><option value="depth:3">3rd level</option></select></label>
+            <button id="planBtn">Show file names</button></div>
+            <div id="plan"></div>
+          </div>
+        </div>
+        <div class="opt">
+          <label><input type="checkbox" id="mCombined"> <b>One list for everything</b></label>
+          <div class="where">file name (in the folder above) - pick an existing list to add to, or type a new name
+            <input type="text" id="combined" list="listNames" placeholder="(automatic name from the folder)">
+            <datalist id="listNames"></datalist>
+          </div>
+        </div>
+
+        <h3>List files</h3>
+        <div class="row"><label>format <select id="fmt">
+          <option value="lines">one prompt per line (paragraph text)</option>
+          <option value="blocks">blocks with an image-name header</option>
+          <option value="jsonl">JSON lines (.jsonl): {"image", "prompt"} per line</option></select></label></div>
+        <div class="row">If the list file already exists:
+          <label><input type="radio" name="onExists" value="append" checked> add to the end of it</label>
+          <label><input type="radio" name="onExists" value="new"> make a new numbered file</label></div>
+        <div class="row"><label><input type="checkbox" id="dedupe" checked> skip prompts that are already in the list</label></div>
+        <div class="row"><label title="name.meta.jsonl beside each list: for every prompt its position, model, preset, instructions and image. Kept in step when the app adds to the list."><input type="checkbox" id="sidecar"> also keep a .meta.jsonl beside each list (model, instructions and image for every prompt)</label></div>
+        <div class="muted" style="font-size:12px">Every save is also recorded in the app's own index, so you can always look a prompt up below. JSON-lines lists carry the model and instructions on each line.</div>
+
+        <h3>Saved files</h3>
+        <div class="written" id="written"><span class="muted">nothing saved yet in this session</span></div>
+
+        <h3>Where did a prompt come from?</h3>
+        <textarea id="whenceText" rows="3" style="width:100%" placeholder="paste a prompt (or a long piece of one) from any list file"></textarea>
+        <div class="row"><button id="whenceBtn">Look it up</button></div>
+        <div id="whenceOut" style="font-size:12.5px"></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div id="drop">Drop images or folders to add them to the queue</div>
+<div id="viewer"><img alt=""></div>
+<div id="toast"></div>
+
+<script>
+"use strict";
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const thumb = (p, side = 256) => `/thumb?side=${side}&path=${encodeURIComponent(p)}`;
+const base = p => p.split(/[\\/]/).pop();
+const fmtN = n => Number(n).toLocaleString();
+
+async function api(path, body) {
+  const opt = body === undefined ? {} : {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)};
+  const r = await fetch(path, opt);
+  const data = await r.json().catch(() => ({error: `HTTP ${r.status}`}));
+  if (!r.ok || data.error) throw new Error(data.error || `HTTP ${r.status}`);
+  return data;
+}
+function toast(msg, ms = 2600) { const t = $("#toast"); t.textContent = msg; t.style.display = "block"; clearTimeout(toast.h); toast.h = setTimeout(() => t.style.display = "none", ms); }
+function fail(e) { console.error(e); toast("⚠ " + (e.message || e), 5000); }
+
+const S = { presets: [], modifiers: [], mods: {}, queue: [], browse: null, view: [], queued: new Set(), sel: new Set(), last: -1,
+            since: 0, polling: false, running: false, runImages: new Set(), overrides: {}, drives: [], recent: [] };
+
+/* ------------------------------------------------------------------ persistence */
+function loadLocal() { try { return JSON.parse(localStorage.getItem("vlmp.ui") || "{}"); } catch { return {}; } }
+function saveLocal() {
+  const v = { mods: S.mods, runNote: $("#runNote").value, variations: $("#variations").value, reasoning: $("#mode").value,
+    temperature: $("#temperature").value, maxTokens: $("#maxTokens").value, seed: $("#seed").value,
+    mImage: $("#mImage").checked, mFolder: $("#mFolder").checked, mCombined: $("#mCombined").checked, autoSave: $("#autoSave").checked,
+    fmt: $("#fmt").value, groupBy: $("#groupBy").value, combined: $("#combined").value, groupDir: $("#groupDir").value,
+    onExists: onExists(), dedupe: $("#dedupe").checked, sidecar: $("#sidecar").checked, tw: $("#tw").value, recursive: $("#recursive").checked,
+    onlyNew: $("#onlyNew").checked, path: S.browse?.path || "", model: $("#model").value, ctx: $("#ctx").value,
+    useFacts: $("#useFacts").checked, factsEth: $("#factsEth").checked };
+  try { localStorage.setItem("vlmp.ui", JSON.stringify(v)); } catch {}
+}
+const onExists = () => ($$("input[name=onExists]").find(r => r.checked) || {}).value || "append";
+let qSaveTimer = 0;
+function saveQueue() { clearTimeout(qSaveTimer); qSaveTimer = setTimeout(() => api("/api/queue", {items: S.queue.map(stripItem)}).catch(fail), 1500); }
+const stripItem = it => ({image: it.image, root: it.root, note: it.note || "", prompts: it.prompts || [], stats: it.stats || null, redo: !!it.redo,
+                          status: it.status === "running" ? "" : (it.status || ""), error: it.error || "", savedTo: it.savedTo || {}, meta: it.meta || null});
+const sig = it => JSON.stringify(it.prompts || []);
+const hasPrompts = it => (it.prompts || []).some(p => p.trim());
+/* Saving is tracked per destination: ticking a new output (e.g. "next to each image") after a save
+   makes the prompts unsaved for that output only. Keys include folder / name / format, so changing those counts too. */
+function destKeys() {
+  const k = {}, dir = $("#groupDir").value.trim().toLowerCase(), fmt = $("#fmt").value;
+  if ($("#mImage").checked) k["per-image"] = "img";
+  if ($("#mFolder").checked) k["per-folder"] = `folder|${dir}|${$("#groupBy").value}|${fmt}`;
+  if ($("#mCombined").checked) k["combined"] = `comb|${dir}|${($("#combined").value.trim() || "(auto)").toLowerCase()}|${fmt}`;
+  return k;
+}
+const unsavedFor = (it, key) => hasPrompts(it) && (it.savedTo || {})[key] !== sig(it);
+const isUnsaved = it => Object.values(destKeys()).some(k => unsavedFor(it, k));
+
+/* ------------------------------------------------------------------ models */
+/* Model choice. "__loaded__" = use whatever LM Studio has loaded and never load/unload (the default). */
+async function loadModels() {
+  const d = await api(`/api/models?all=${$("#allTypes").checked ? 1 : 0}`);
+  S.models = d.models; S.loaded = d.loaded || [];
+  const sel = $("#model"), cur = sel.value || S.wantModel || "__loaded__";
+  const ld = S.loaded[0];
+  const opt = m => `<option value="${esc(m.id)}" data-fav="${m.fav ? 1 : 0}" title="${esc(m.id)}">${m.loaded ? "● " : ""}${esc(m.display || m.id)}${m.quant ? " · " + esc(m.quant) : ""}${m.size ? " · " + esc(m.size) : ""}${m.vision ? "" : " [text only]"}</option>`;
+  const fav = d.models.filter(m => m.fav), rest = d.models.filter(m => !m.fav);
+  sel.innerHTML = `<option value="__loaded__">⚡ Use what's loaded in LM Studio${ld ? ": " + esc(ld.display || ld.id) : " (nothing loaded)"}</option>` +
+    (fav.length ? `<optgroup label="★ Favourites">${fav.map(opt).join("")}</optgroup>` : "") +
+    `<optgroup label="${$("#allTypes").checked ? "All models" : "Vision models"}">${rest.map(opt).join("")}</optgroup>`;
+  sel.value = [...sel.options].some(o => o.value === cur) ? cur : "__loaded__";
+  updateModelUI();
+}
+const isLoaded = id => (S.loaded || []).some(m => m.id === id || m.identifier === id);
+function updateModelUI() {
+  const v = $("#model").value, ld = S.loaded || [], o = $("#model").selectedOptions[0];
+  $("#fav").textContent = o && o.dataset.fav === "1" ? "★" : "☆";
+  $("#fav").disabled = v === "__loaded__";
+  let st;
+  if (v === "__loaded__") st = ld.length ? `ctx ${fmtN(ld[0].ctx)} - never loads or unloads` : "nothing loaded in LM Studio";
+  else if (isLoaded(v)) st = `loaded · ctx ${fmtN((ld.find(m => m.id === v || m.identifier === v) || {}).ctx || 0)}`;
+  else st = ld.length ? `not loaded - Run or Load will swap out ${ld[0].display || ld[0].id}` : "not loaded - Run or Load will load it";
+  $("#modelState").textContent = st; $("#modelState").title = st;
+  $("#loadBtn").disabled = v === "__loaded__" || isLoaded(v);
+  $("#ejectBtn").disabled = !ld.length;
+  loadModes().catch(fail);
+}
+async function loadModes() {
+  const d = await api(`/api/modes?model=${encodeURIComponent($("#model").value)}`);
+  const sel = $("#mode"), want = sel.value || S.wantMode || "";
+  sel.innerHTML = d.modes.map(m => `<option value="${esc(m.value)}">${esc(m.label)}</option>`).join("");
+  sel.title = d.note || ""; sel.style.outline = d.note ? "2px solid var(--warn)" : "";
+  if (d.note && !S.tagNoteShown) { S.tagNoteShown = true; toast(d.note, 12000); }
+  if ([...sel.options].some(o => o.value === want)) sel.value = want;
+  sel.title = d.caps.known ? "Modes read from this model's chat template" : "Template not readable - basic on/off only";
+}
+async function loadSelected() {
+  const v = $("#model").value, ld = S.loaded || [];
+  if (v === "__loaded__" || isLoaded(v)) return;
+  if (ld.length && !confirm(`LM Studio has ${ld[0].display || ld[0].id} loaded.\nUnload it and load ${v}?`)) return;
+  $("#modelState").textContent = "loading in LM Studio..."; $("#loadBtn").disabled = true;
+  const d = await api("/api/load", {model: v, context: +$("#ctx").value || 21000});
+  toast(`loaded in ${d.load_s}s`); await loadModels();
+}
+async function ejectLoaded() {
+  const ld = S.loaded || []; if (!ld.length) return;
+  if (!confirm(`Unload ${ld.map(m => m.display || m.id).join(", ")} from LM Studio?`)) return;
+  await api("/api/eject", {}); await loadModels();
+}
+
+/* ------------------------------------------------------------------ folders column */
+function showHome() {
+  S.browse = null; S.view = []; $("#path").value = "";
+  $("#dirs").innerHTML =
+    (S.recent.length ? `<div class="sect">Recent folders</div>` + S.recent.map(r => `<div class="f" data-p="${esc(r)}" title="${esc(r)}">🕘 ${esc(r)}</div>`).join("") : "") +
+    `<div class="sect">Drives</div>` + S.drives.map(d => `<div class="f" data-p="${esc(d)}">💽 ${esc(d)}</div>`).join("") +
+    `<div class="hint">Click a folder to open it, or paste a path above. Then pick images in the gallery and press <b>+ Add selected</b>, or use <b>+ Add this folder to queue</b>.</div>`;
+  layoutGrid(true);
+  $("#gridInfo").textContent = "open a folder on the left";
+}
+async function browse(path, keep = false) {
+  const d = await api(`/api/ls?path=${encodeURIComponent(path)}`);
+  if (d.error) { toast("⚠ " + d.error, 5000); return; }
+  const scroll = keep ? $("#grid").scrollTop : 0;
+  S.browse = d;
+  if (!keep) { S.sel.clear(); S.last = -1; $("#filter").value = ""; }
+  $("#path").value = d.path;
+  requestAnimationFrame(() => { $("#path").scrollLeft = $("#path").scrollWidth; });   // show the end of long paths
+  $("#dirs").innerHTML = `<div class="f up" data-home="1">⌂ Drives &amp; recent folders</div>` +
+    (d.parent ? `<div class="f up" data-p="${esc(d.parent)}" title="${esc(d.parent)}">⬑ up to ${esc(base(d.parent) || d.parent)}</div>` : "") +
+    `<div class="cur" title="${esc(d.path)}">📂 ${esc(base(d.path.replace(/[\\/]+$/, "")) || d.path)} <span class="muted">${fmtN(d.images.length)} images${d.dirs.length ? `, ${d.dirs.length} subfolders` : ""}</span></div>` +
+    d.dirs.map(x => `<div class="f" data-p="${esc(x.path)}" title="${esc(x.path)}">📁 ${esc(x.name)}</div>`).join("") +
+    (!d.dirs.length ? `<div class="hint">no subfolders</div>` : "");
+  applyFilter();
+  if (d.select) {                                   // a pasted image path: select it and scroll to it
+    const i = d.images.findIndex(im => im.n === d.select);
+    if (i >= 0) { S.sel.add(i); S.last = S.view.indexOf(i); }
+  }
+  $("#grid").scrollTop = scroll; layoutGrid(true);
+  if (d.select && S.last >= 0) { $("#grid").scrollTop = Math.floor(S.last / G.cols) * G.rowH; layoutGrid(true); }
+  if (d.images.length && !S.recent.includes(d.path)) S.recent = [d.path, ...S.recent].slice(0, 12);
+  saveLocal();
+}
+const fullPath = i => S.browse.path.replace(/[\\/]+$/, "") + S.browse.sep + S.browse.images[i].n;
+
+/* ------------------------------------------------------------------ gallery: virtual grid (only visible rows exist) */
+function applyFilter() {
+  const d = S.browse; if (!d) { S.view = []; return; }
+  const f = ($("#filter").value || "").trim().toLowerCase();
+  S.view = f ? d.images.map((im, i) => im.n.toLowerCase().includes(f) ? i : -1).filter(i => i >= 0) : d.images.map((_, i) => i);
+  S.queued = new Set(S.queue.map(q => q.image.toLowerCase()));
+  $("#gridInfo").innerHTML = `${f ? fmtN(S.view.length) + " of " : ""}${fmtN(d.images.length)} images in <b>${esc(base(d.path.replace(/[\\/]+$/, "")) || d.path)}</b>`;
+  $("#gridInfo").title = d.path;
+}
+const G = { first: -1, last: -1, rowH: 0, cols: 1, cw: 150, measured: {}, raf: 0 };
+function layoutGrid(force) {
+  const d = S.browse, outer = $("#cards"), inner = $("#cardsIn"), sec = $("#grid");
+  if (!d || !S.view.length) {
+    outer.style.height = "auto"; inner.style.position = "static"; inner.style.transform = ""; inner.style.gridTemplateColumns = "1fr";
+    inner.innerHTML = d ? `<div class="empty">no images in this folder${d.dirs.length ? " - open a subfolder on the left, or + Add this folder to queue (with subfolders)" : ""}</div>` : "";
+    G.first = G.last = -1; updateAddSel(); return;
+  }
+  inner.style.position = "absolute";
+  const gap = 8, tw = +$("#tw").value || 150, W = outer.clientWidth;
+  G.cols = Math.max(1, Math.floor((W + gap) / (tw + gap)));
+  G.cw = Math.floor((W - gap * (G.cols - 1)) / G.cols);
+  const key = G.cw;
+  G.rowH = G.measured[key] || (G.cw + 18 + gap);
+  const rows = Math.ceil(S.view.length / G.cols);
+  outer.style.height = rows * G.rowH + "px";
+  const top = Math.max(0, sec.scrollTop - outer.offsetTop);
+  const r0 = Math.max(0, Math.floor(top / G.rowH) - 2), r1 = Math.min(rows, Math.ceil((top + sec.clientHeight) / G.rowH) + 2);
+  const first = r0 * G.cols, last = Math.min(S.view.length, r1 * G.cols);
+  if (!force && first === G.first && last === G.last) return;
+  G.first = first; G.last = last;
+  const side = tw > 220 ? 400 : 256;
+  inner.style.gridTemplateColumns = `repeat(${G.cols}, ${G.cw}px)`;
+  inner.style.transform = `translateY(${r0 * G.rowH}px)`;
+  let html = "";
+  for (let v = first; v < last; v++) {
+    const i = S.view[v], im = d.images[i], p = fullPath(i);
+    html += `<div class="card${S.sel.has(i) ? " sel" : ""}${S.queued.has(p.toLowerCase()) ? " queued" : ""}" data-i="${i}" data-v="${v}" title="${esc(im.n)}">` +
+      `<img src="${thumb(p, side)}" alt="">${im.p ? '<span class="dot" title="already has a prompt file"></span>' : ""}<div class="nm">${esc(im.n)}</div></div>`;
+  }
+  inner.innerHTML = html;
+  const c = inner.firstElementChild;
+  if (c && !G.measured[key]) {
+    G.measured[key] = c.offsetHeight + gap;
+    if (Math.abs(G.measured[key] - G.rowH) > 1) return layoutGrid(true);
+  }
+  updateAddSel();
+}
+function updateAddSel() { $("#addSel").disabled = !S.sel.size; $("#addSel").textContent = S.sel.size ? `+ Add selected (${fmtN(S.sel.size)})` : "+ Add selected"; }
+function paintSel() { $$("#cardsIn .card").forEach(c => c.classList.toggle("sel", S.sel.has(+c.dataset.i))); updateAddSel(); }
+function renderGrid() { applyFilter(); layoutGrid(true); }
+function clickCard(e) {
+  const card = e.target.closest(".card"); if (!card) return;
+  const i = +card.dataset.i, v = +card.dataset.v;
+  if (e.shiftKey && S.last >= 0) { const [a, b] = [Math.min(S.last, v), Math.max(S.last, v)]; for (let k = a; k <= b; k++) S.sel.add(S.view[k]); }
+  else if (e.ctrlKey || e.metaKey) { S.sel.has(i) ? S.sel.delete(i) : S.sel.add(i); }
+  else { const only = S.sel.size === 1 && S.sel.has(i); S.sel.clear(); if (!only) S.sel.add(i); }
+  S.last = v; paintSel();
+}
+
+/* ------------------------------------------------------------------ queue */
+function addItems(items) {
+  if (items.length > 3000 && !confirm(`Add ${fmtN(items.length)} images to the queue?`)) return;
+  const have = new Set(S.queue.map(q => q.image.toLowerCase()));
+  let n = 0;
+  for (const it of items) { if (have.has(it.image.toLowerCase())) continue; have.add(it.image.toLowerCase()); S.queue.push({image: it.image, root: it.root, note: "", prompts: [], status: ""}); n++; }
+  renderQueue(); renderGrid(); saveQueue();
+  toast(`${fmtN(n)} added to the queue${items.length - n ? `, ${fmtN(items.length - n)} were already in it` : ""}`);
+}
+function statsLine(it) {
+  const s = it.stats; if (!s) return "";
+  const parts = [`${s.output_tokens ?? "?"} tok`];
+  if (s.wall_s) parts.push(`${s.wall_s}s`);
+  if (s.tok_s) parts.push(`${s.tok_s} tok/s`);
+  if (s.reasoning_tokens) parts.push(`${s.reasoning_tokens} thinking`);
+  if (s.sent_size) parts.push(`sent ${s.sent_size.join("×")}`);
+  return parts.join(" · ");
+}
+function metaLine(it) {
+  const m = it.meta; if (!m) return "";
+  const model = (m.model || "").length > 48 ? m.model.slice(0, 46) + "..." : m.model;
+  return `${model} · ${m.preset} · instructions ${m.instr} · ${m.at}`;
+}
+const STATUS_TEXT = { ok: "✓ ok", cached: "✓ cached", error: "✗ error", running: "working...", skipped: "skipped" };
+const QP = { page: 0, size: 100 };
+function renderQueue() {
+  if (typeof cmpRender === "function" && S.presets && S.presets.length) setTimeout(cmpRender, 0);
+  updateRunLabel();
+  $("#qCount").textContent = S.queue.length ? `(${fmtN(S.queue.length)})` : "";
+  const limit = currentPreset()?.token_limit || 0;
+  const pages = Math.max(1, Math.ceil(S.queue.length / QP.size));
+  QP.page = Math.max(0, Math.min(QP.page, pages - 1));
+  const start = QP.page * QP.size, slice = S.queue.slice(start, start + QP.size);
+  const withPrompts = S.queue.reduce((n, it) => n + ((it.prompts || []).length ? 1 : 0), 0);
+  const unsaved = S.queue.filter(isUnsaved).length;
+  $("#saveInfo").textContent = unsaved ? `${fmtN(unsaved)} image(s) with prompts not saved yet` : (withPrompts ? "everything in the queue is saved" : "");
+  const pager = S.queue.length > QP.size ? `<div class="pager"><button data-pg="-1000000">⏮</button><button data-pg="-1">◀</button>
+      <span>${fmtN(start + 1)}-${fmtN(start + slice.length)} of ${fmtN(S.queue.length)}</span>
+      <button data-pg="1">▶</button><button data-pg="1000000">⏭</button><span class="muted">${fmtN(withPrompts)} with prompts</span></div>` : "";
+  $("#queue").innerHTML = S.queue.length ? pager + slice.map((it, k) => {
+    const i = start + k;
+    const over = limit && it.stats && it.stats.output_tokens / Math.max(1, (it.prompts || []).length) > limit;
+    const st = it.status ? `<span class="st ${it.status}">${STATUS_TEXT[it.status] || esc(it.status)}</span>` : "";
+    const uns = isUnsaved(it) && it.status !== "running" ? `<span class="st unsaved" title="not written to a file yet">not saved</span>` : "";
+    const cut = it.stats && it.stats.finish === "length" ? `<span class="st warn" title="the model hit the max-tokens cap, so this prompt is incomplete - tick redo">✂ cut off</span>` : "";
+    const redo = (it.prompts || []).length && it.status !== "running"
+      ? `<label class="redo${it.redo ? " on" : ""}" title="Generate this image again on the next run (ignores the cache)"><input type="checkbox" data-act="redo"${it.redo ? " checked" : ""}> redo</label>` : "";
+    const flags = uns + cut + (over ? '<span class="st warn" title="longer than the target model reads (it would be cut off at render time)">over limit</span>' : "");
+    return `<div class="q" data-i="${i}">
+      <div class="side">
+        <div class="strip">${st}${redo}<button class="rm" data-act="rm" title="Remove from queue">✕</button></div>
+        <img loading="lazy" src="${thumb(it.image, 300)}" data-full="${esc(it.image)}" alt="">
+      </div>
+      <div>
+        <span class="nm" title="${esc(it.image)}">${esc(base(it.image))}</span>
+        ${flags ? `<div class="flags">${flags}</div>` : ""}
+        <input class="note" type="text" data-act="note" value="${esc(it.note || "")}" placeholder="extra instruction for this image only (optional)">
+        ${(it.prompts || []).map((p, k2) => `<textarea class="p" data-act="prompt" data-k="${k2}">${esc(p)}</textarea>`).join("")}
+        ${it.error ? `<div class="stats" style="color:var(--bad)">${esc(it.error)}</div>` : ""}
+        <div class="stats">${esc(statsLine(it))}</div>
+        ${it.meta ? `<div class="stats" title="${esc(it.meta.model)}">${esc(metaLine(it))}</div>` : ""}
+      </div></div>`;
+  }).join("") + (pager ? pager.replace('class="pager"', 'class="pager" style="border-top:1px solid var(--line)"') : "")
+    : `<div class="empty-q">The queue is empty.<br>Select images in the gallery and press <b>+ Add selected</b>,<br>use <b>+ Add this folder to queue</b>,<br>or drag images or folders from Explorer onto this window.</div>`;
+}
+function queueEvent(e) {
+  if (e.type === "click" && e.target.dataset.pg) { QP.page += +e.target.dataset.pg; renderQueue(); $("#pane-queue").scrollTop = 0; return; }
+  const row = e.target.closest(".q"); if (!row) return;
+  const it = S.queue[+row.dataset.i];
+  const act = e.target.dataset.act;
+  if (e.type === "click" && act === "rm") { S.queue.splice(+row.dataset.i, 1); renderQueue(); renderGrid(); saveQueue(); }
+  else if (e.type === "click" && e.target.dataset.full) { showImage(e.target.dataset.full); }
+  else if (e.type === "input" && act === "note") { it.note = e.target.value; saveQueue(); }
+  else if (e.type === "click" && act === "redo") { it.redo = e.target.checked; e.target.closest(".redo").classList.toggle("on", it.redo); saveQueue(); updateRunLabel(); }
+  else if (e.type === "input" && act === "prompt") { it.prompts[+e.target.dataset.k] = e.target.value; saveQueue(); $("#saveInfo").textContent = "edited prompts are saved with Save now"; }
+}
+function showImage(path) { const v = $("#viewer"); $("img", v).src = thumb(path, 1600); v.style.display = "flex"; }
+async function refreshQueueLists() {
+  const d = await api("/api/queues");
+  $("#qLists").innerHTML = `<option value="">Saved queues...</option><option value="__save__">＋ Save this queue under a name...</option>` +
+    (d.names.length ? `<optgroup label="Open a saved queue">${d.names.map(n => `<option value="q:${esc(n)}">${esc(n)}</option>`).join("")}</optgroup>` : "");
+}
+
+/* ------------------------------------------------------------------ instructions */
+const currentPreset = () => S.presets.find(p => p.id === $("#preset").value);
+function renderChips() {
+  requestAnimationFrame(balanceChips);
+  $("#chips").innerHTML = S.modifiers.map(m => {
+    const st = S.mods[m.id] || {};
+    return `<span class="chip"><button data-m="${esc(m.id)}" class="${st.on ? "on" : ""}" title="${esc(m.text)}">${esc(m.name)}</button>${m.takes_value && st.on ? `<input type="text" data-mv="${esc(m.id)}" value="${esc(st.value || "")}" placeholder="value">` : ""}</span>`;
+  }).join("");
+}
+function balanceChips() {
+  const box = $("#chips"); if (!box || !box.offsetParent) return;
+  box.style.maxWidth = "none";
+  const chips = [...box.children]; if (chips.length < 2) return;
+  const avail = box.clientWidth, gap = 6;
+  const widths = chips.map(c => c.offsetWidth + gap);
+  const total = widths.reduce((a, b) => a + b, 0);
+  const rows = Math.max(1, Math.ceil(total / avail));
+  if (rows === 1) return;
+  const linesAt = w => { let n = 1, x = 0; for (const cw of widths) { if (x && x + cw > w) { n++; x = 0; } x += cw; } return n; };
+  let w = Math.ceil(total / rows);
+  while (w < avail && linesAt(w) > rows) w += 8;
+  box.style.maxWidth = Math.min(avail, w) + "px";
+}
+function updateRiSummary() {
+  const n = modArgs().length + ($("#runNote").value.trim() ? 1 : 0) + ($("#useFacts").checked ? 1 : 0);
+  $("#riSummary").textContent = n ? `- ${n} active` : "- click to switch on";
+}
+function modArgs() {
+  return S.modifiers.filter(m => S.mods[m.id]?.on).filter(m => !m.takes_value || (S.mods[m.id].value || "").trim())
+    .map(m => m.takes_value ? `${m.id}=${S.mods[m.id].value.trim()}` : m.id);
+}
+async function loadPresetText() {
+  const id = $("#preset").value; if (!id) return;
+  const d = await api(`/api/preset?id=${encodeURIComponent(id)}`);
+  $("#presetText").value = d.text; $("#presetText").dataset.orig = d.text; $("#editId").textContent = id;
+}
+async function savePreset(id) {
+  const d = await api("/api/preset/save", {id, text: $("#presetText").value});
+  if (d.warning) toast("⚠ " + d.warning, 6000); else toast(`saved preset ${d.id}`);
+  await loadState(d.id);
+}
+async function showComposed() {
+  const d = await api("/api/compose", {preset: $("#preset").value, mods: modArgs(), note: $("#runNote").value, variations: +$("#variations").value || 1});
+  const pre = $("#composed"); pre.style.display = "block";
+  pre.textContent = `── SYSTEM ──\n${d.system}\n\n── USER ──\n${d.user}\n\n(+ the image; per-image notes are added under "Additional instructions")`;
+  $("#composeSha").textContent = `instructions ${d.sha}`;
+}
+
+/* ------------------------------------------------------------------ run / stop */
+function runCount() { return S.queue.filter(it => it.redo || !$("#onlyNew").checked || $("#force").checked || !(it.prompts || []).length).length; }
+function updateRunLabel() { if (!S.running && $("#cmpOn") && $("#cmpOn").checked) { $("#runBtn").textContent = `\u25B6 Run ${cmpVariants().length * S.queue.length} versions`; return; } if (!S.running) { const n = runCount(); $("#runBtn").textContent = n ? `▶ Run ${fmtN(n)}` : "▶ Run queue"; } }
+function setRunning(on) {
+  S.running = on;
+  const b = $("#runBtn");
+  b.textContent = on ? "■ Stop" : "▶ Run queue";
+  b.className = on ? "danger" : "primary";
+  b.title = on ? "Stop after the image being processed now" : "Generate prompts for the queue";
+  updateRunLabel();
+}
+function cmpVariants() {
+  const presets = [...document.querySelectorAll("#cmpPresets input:checked")].map(x => x.value);
+  const facts = [...($("#cmpNoFacts").checked ? [false] : []), ...($("#cmpFacts").checked ? [true] : [])];
+  const out = []; presets.forEach(p => facts.forEach(f => out.push({preset: p, facts: f, reasoning: $("#mode").value})));
+  return out;
+}
+function cmpRender() {
+  const box = $("#cmpPresets");
+  if (!box.dataset.done && S.presets.length) {
+    box.innerHTML = S.presets.map(p => `<label style="margin-right:10px"><input type="checkbox" value="${esc(p.id)}" ${p.id === $("#preset").value ? "checked" : ""}> ${esc(p.id)}</label>`).join("");
+    box.dataset.done = "1";
+  }
+  $("#cmpBox").style.display = $("#cmpOn").checked ? "" : "none";
+  const v = cmpVariants().length, n = S.queue.length;
+  $("#cmpCount").textContent = `${v} version${v === 1 ? "" : "s"} x ${n} image${n === 1 ? "" : "s"} = ${v * n} prompts`;
+  updateRunLabel && updateRunLabel();
+}
+async function runCompare() {
+  const variants = cmpVariants();
+  if (!variants.length) return toast("tick at least one preset and one of without / with");
+  if (!S.queue.length) return toast("the queue is empty");
+  if ($("#model").value === "__loaded__" && !(S.loaded || []).length) return toast("nothing is loaded in LM Studio - load a model there or pick one at the top", 5000);
+  await api("/api/compare/start", {layout: layoutSpec(), items: S.queue.map(it => ({image: it.image, root: it.root})), variants, name: $("#cmpName").value.trim(),
+    model: $("#model").value, mods: modArgs(), note: $("#runNote").value, max_tokens: +$("#maxTokens").value || 0,
+    temperature: $("#temperature").value, seed: $("#seed").value});
+  setRunning(true); S.comparing = true;
+  while (true) {
+    const s = await api("/api/compare/status");
+    const pct = s.total ? ((s.variant - 1) * s.total + s.done) / (s.variants * s.total) : 0;
+    $("#bar").style.width = Math.round(100 * pct) + "%";
+    $("#progress").textContent = s.running ? `version ${s.variant}/${s.variants} (${s.label || ""}) · image ${s.done}/${s.total}${s.errors ? ` · ${s.errors} errors` : ""}` :
+      (s.file ? "done" : "stopped");
+    if (s.last_error) $("#progress").title = s.last_error;
+    if (!s.running) { if (s.file) toast("versions written to " + s.file, 9000); else if (s.last_error) toast(s.last_error, 8000); break; }
+    await new Promise(r => setTimeout(r, 2000));
+  }
+  S.comparing = false; setRunning(false);
+}
+async function run() {
+  if ($("#cmpOn").checked) return runCompare();
+  const todo = S.queue.filter(it => it.redo || !$("#onlyNew").checked || $("#force").checked || !(it.prompts || []).length);
+  if (!todo.length) { toast(S.queue.length ? "every image in the queue already has a prompt - untick 'only new' or tick 'regenerate'" : "the queue is empty", 4500); return; }
+  const mv = $("#model").value;
+  if (mv === "__loaded__" && !(S.loaded || []).length) { toast("nothing is loaded in LM Studio - load a model there or pick one at the top", 5000); return; }
+  if (mv !== "__loaded__" && !isLoaded(mv) && (S.loaded || []).length &&
+      !confirm(`LM Studio has ${S.loaded[0].display || S.loaded[0].id} loaded.\nRunning will unload it and load ${mv}. Continue?`)) return;
+  const notes = {}; todo.forEach(it => { if ((it.note || "").trim()) notes[it.image] = it.note; });
+  const body = { items: todo.map(it => ({image: it.image, root: it.root})), model: $("#model").value, preset: $("#preset").value,
+    mods: modArgs(), note: $("#runNote").value, notes, variations: +$("#variations").value || 1, reasoning: $("#mode").value,
+    max_tokens: +$("#maxTokens").value || 0, temperature: $("#temperature").value, seed: $("#seed").value, force: $("#force").checked,
+    context_length: +$("#ctx").value || 0, layout: layoutSpec(), facts: $("#useFacts").checked, facts_ethnicity: $("#factsEth").checked,
+    redo: todo.filter(it => it.redo).map(it => it.image) };
+  todo.forEach(it => { it.status = "running"; it.error = ""; });
+  S.runImages = new Set(todo.map(it => it.image));
+  renderQueue();
+  await api("/api/run", body);
+  S.since = 0;
+  setRunning(true); $("#bar").style.width = "0"; $("#progress").textContent = "starting...";
+  poll();
+}
+async function poll() {
+  if (S.polling) return; S.polling = true;
+  try {
+    while (true) {
+      const d = await api(`/api/job?since=${S.since}`);
+      S.since = d.next;
+      for (const e of d.events) handleEvent(e);
+      if (d.events.length) { renderQueue(); saveQueue(); }
+      if (d.state !== "running") { await finishRun(d.state); break; }
+      await new Promise(r => setTimeout(r, 700));
+    }
+  } catch (e) { fail(e); await finishRun("error"); }
+  S.polling = false;
+}
+function handleEvent(e) {
+  if (e.type === "load") $("#progress").textContent = e.state === "loading" ? `loading model...` : (e.load_s ? `model loaded in ${e.load_s}s` : "model ready");
+  else if (e.type === "item") {
+    const it = S.queue.find(q => q.image === e.image);
+    if (it) {
+      it.status = e.status;
+      if (e.prompts && e.prompts.length) {
+        it.prompts = e.prompts; it.redo = false;
+        it.meta = {model: e.model, preset: e.preset, instr: e.instr_sha, at: new Date().toISOString().slice(0, 16).replace("T", " ")};
+      }
+      it.stats = e.stats || it.stats; it.error = e.error || "";
+    }
+    $("#bar").style.width = `${Math.round(100 * e.i / e.total)}%`;
+    const s = e.stats || {};
+    $("#progress").textContent = `${e.i}/${e.total}` + (e.status === "ok" ? ` · ${s.output_tokens} tok · ${s.wall_s}s` : ` · ${e.status}`);
+  } else if (e.type === "fatal") { toast("⚠ " + e.error, 8000); $("#progress").textContent = "error"; }
+  else if (e.type === "done") $("#progress").textContent = `done: ${e.done} prompted${e.errors ? `, ${e.errors} errors` : ""}, ${e.elapsed_s}s`;
+  else if (e.type === "cancelled") $("#progress").textContent = "stopped";
+}
+async function finishRun(state) {
+  loadModels().catch(() => {});
+  S.queue.forEach(it => { if (it.status === "running") it.status = ""; });
+  setRunning(false); renderQueue(); saveQueue();
+  if ((state === "done" || state === "cancelled") && $("#autoSave").checked) {
+    const items = S.queue.filter(it => S.runImages.has(it.image) && isUnsaved(it));
+    if (items.length) await saveFiles(items, true).catch(fail);
+  } else if (state === "done") toast("finished - press Save now on the Save tab to write files", 4000);
+}
+
+/* ------------------------------------------------------------------ save */
+function saveModes() { return [["per-image", "#mImage"], ["per-folder", "#mFolder"], ["combined", "#mCombined"]].filter(([, s]) => $(s).checked).map(([m]) => m); }
+async function previewNames() {
+  const items = S.queue.map(it => ({image: it.image, root: it.root}));
+  if (!items.length) { $("#plan").innerHTML = '<span class="muted">the queue is empty</span>'; return; }
+  const d = await api("/api/plan", {items, group_by: $("#groupBy").value, overrides: S.overrides});
+  const fate = n => n == null ? '<span class="muted">new file</span>'
+    : onExists() === "append" ? `<span style="color:var(--warn)">adds to the end of the existing file (${n} lines)</span>`
+    : '<span class="muted">exists - a new numbered file is made</span>';
+  $("#plan").innerHTML = `<table class="plan"><tr><th>file name (+ _prompts.txt) - edit to rename</th><th>images</th><th>when saved</th></tr>${d.groups.map(g => {
+    const stem = g.name.replace(/_prompts\.txt$/, "");
+    return `<tr><td><input type="text" data-g="${esc(g.group)}" value="${esc(stem)}"><div class="src">${esc(g.group)}</div></td><td>${g.count}</td><td style="font-size:12px">${fate(g.existing_lines)}</td></tr>`;
+  }).join("")}</table><div style="font-size:12px;margin-top:4px">one list for everything (${esc(d.combined)}): ${fate(d.combined_existing_lines)}</div>`;
+}
+async function refreshListNames() {
+  const d = await api(`/api/lists?dir=${encodeURIComponent($("#groupDir").value)}`).catch(() => ({names: []}));
+  $("#listNames").innerHTML = d.names.map(n => `<option value="${esc(n)}">`).join("");
+}
+async function saveFiles(items, auto = false) {
+  const keys = destKeys();
+  if (!Object.keys(keys).length) { toast("tick at least one thing to write on the Save tab"); return; }
+  const common = {format: $("#fmt").value, group_by: $("#groupBy").value, group_dir: $("#groupDir").value,
+                  combined: $("#combined").value, overrides: S.overrides, on_exists: onExists(), dedupe: $("#dedupe").checked,
+                  sidecar: $("#sidecar").checked};
+  const written = [];
+  for (const [mode, key] of Object.entries(keys)) {          // one request per destination, only what that destination still needs
+    const todo = items.filter(it => unsavedFor(it, key));
+    if (!todo.length) continue;
+    const payload = todo.map(it => ({image: it.image, root: it.root, prompts: (it.prompts || []).filter(p => p.trim()), meta: it.meta || null}));
+    const d = await api("/api/export", {...common, items: payload, modes: [mode]});
+    written.push(...d.written.map(w => ({...w, mode})));
+    todo.forEach(it => { it.savedTo = {...(it.savedTo || {}), [key]: sig(it)}; });
+  }
+  if (!written.length) { toast("nothing new to save for the outputs ticked on the Save tab"); renderQueue(); return; }
+  const perImage = written.filter(w => w.mode === "per-image"), lists = written.filter(w => w.mode !== "per-image");
+  const when = new Date().toLocaleTimeString();
+  const lines = lists.map(w => `<div><a data-open="${esc(w.path)}">open</a><span>${esc(w.path)} <span class="muted">- ${w.action === "appended" ? `added ${w.count}` : w.action === "unchanged" ? "nothing new (all already in it)" : `${w.count} prompts`}</span></span></div>`).join("") +
+    (perImage.length ? `<div><a data-open="${esc(perImage[0].path)}">open</a><span>${fmtN(perImage.length)} prompt file(s) next to their images</span></div>` : "");
+  const box = $("#written");
+  if (box.querySelector(".muted:only-child")) box.innerHTML = "";
+  box.insertAdjacentHTML("afterbegin", `<div class="muted" style="margin-top:6px">${when}${auto ? " (automatic)" : ""}</div>${lines}`);
+  renderQueue(); saveQueue();
+  toast(`saved: ${lists.length} list file(s)${perImage.length ? `, ${fmtN(perImage.length)} prompt file(s) next to images` : ""} - see the Save tab`, 4500);
+  refreshListNames();
+  if (S.browse) browse(S.browse.path, true);
+}
+
+async function whence() {
+  const text = $("#whenceText").value.trim(); if (!text) return;
+  const d = await api("/api/whence", {text});
+  if (!d.hits.length) { $("#whenceOut").innerHTML = '<span class="muted">not found - only prompts saved since the index started (5 Nov 2026) are known</span>'; return; }
+  $("#whenceOut").innerHTML = d.hits.map(h => {
+    const ins = h.instructions || {};
+    const mods = (ins.modifiers || []).map(m => m[1] ? `${m[0]}=${m[1]}` : m[0]).join(", ");
+    return `<div style="border-top:1px solid var(--line);padding:6px 0">
+      <div><b>${esc(h.model || "?")}</b> · preset ${esc(h.preset || "?")} · instructions ${esc(h.instr || "?")} <span class="muted">(${esc(h.match)} match, saved ${esc(h.saved || "")})</span></div>
+      <div class="muted">image: <a data-open="${esc(h.image)}" style="color:var(--accent);cursor:pointer">${esc(h.image)}</a></div>
+      <div class="muted">file: <a data-open="${esc(h.file)}" style="color:var(--accent);cursor:pointer">${esc(h.file)}</a></div>
+      ${mods || ins.note ? `<div class="muted">modifiers: ${esc(mods || "none")}${ins.note ? ` · note: ${esc(ins.note)}` : ""}</div>` : ""}
+      ${ins.system ? `<details><summary class="muted" style="cursor:pointer">full instructions</summary><pre class="preview">${esc(ins.system + "\n\n" + ins.user)}</pre></details>` : ""}
+    </div>`;
+  }).join("");
+}
+
+/* ------------------------------------------------------------------ drag and drop */
+async function readEntry(entry, prefix, out) {
+  if (entry.isFile) { await new Promise(res => entry.file(f => { out.push({file: f, rel: prefix + f.name}); res(); }, res)); }
+  else if (entry.isDirectory) {
+    const reader = entry.createReader();
+    let batch;
+    do { batch = await new Promise(res => reader.readEntries(res, () => res([]))); for (const e of batch) await readEntry(e, prefix + entry.name + "/", out); } while (batch.length);
+  }
+}
+async function onDrop(ev) {
+  ev.preventDefault(); document.body.classList.remove("dragging");
+  const files = [];
+  const entries = [...ev.dataTransfer.items].map(i => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
+  if (entries.length) for (const en of entries) await readEntry(en, "", files);
+  else [...ev.dataTransfer.files].forEach(f => files.push({file: f, rel: f.name}));
+  const imgs = files.filter(f => /\.(jpe?g|png|webp|bmp|tiff?|gif|jfif|avif|heic)$/i.test(f.file.name));
+  if (!imgs.length) { toast("no images in what was dropped"); return; }
+  const batch = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+  const added = [];
+  for (let k = 0; k < imgs.length; k++) {
+    $("#progress").textContent = `copying ${k + 1}/${imgs.length}`;
+    const r = await fetch("/api/upload", {method: "POST", headers: {"X-Filename": imgs[k].rel, "X-Batch": batch}, body: imgs[k].file});
+    const d = await r.json(); if (d.image) added.push(d);
+  }
+  $("#progress").textContent = "ready";
+  addItems(added);
+  toast(`${added.length} dropped image(s) were copied into the app's staging folder (a browser can't see where they came from). Their per-image prompt files will be saved there.`, 7000);
+}
+
+/* ------------------------------------------------------------------ boot */
+async function loadState(presetId) {
+  const d = await api("/api/state");
+  S.presets = d.presets; S.modifiers = d.modifiers; S.drives = d.drives || []; S.recent = d.settings.recent_folders || [];
+  $("#preset").innerHTML = d.presets.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+  $("#preset").value = presetId || d.settings.default_preset;
+  if (!$("#preset").value && d.presets.length) $("#preset").value = d.presets[0].id;
+  if (!$("#groupDir").value) $("#groupDir").value = d.settings.group_dir;
+  $("#drives").innerHTML = S.drives.map(x => `<button data-p="${esc(x)}" title="${esc(x)}">${esc(x.slice(0, 2))}</button>`).join("");
+  if (!S.queue.length) S.queue = (d.queue.items || []).map(it => ({...it, status: it.status === "running" ? "" : it.status}));
+  renderChips(); updateRiSummary(); renderQueue(); loadPresetText().catch(fail);
+  if (d.job === "running") { setRunning(true); poll(); }
+}
+function goPath() { const p = $("#path").value.trim().replace(/^["']|["']$/g, ""); if (p) browse(p).catch(fail); }
+function wire() {
+  $("#model").onchange = () => { S.wantMode = ""; updateModelUI(); saveLocal(); };
+  $("#loadBtn").onclick = () => loadSelected().catch(e => { fail(e); loadModels().catch(() => {}); });
+  $("#ejectBtn").onclick = () => ejectLoaded().catch(fail);
+  $("#fav").onclick = async () => { const o = $("#model").selectedOptions[0]; if (!o || o.value === "__loaded__") return; await api("/api/favorite", {model: o.value, on: o.dataset.fav !== "1"}); await loadModels(); };
+  $("#allTypes").onchange = () => loadModels().catch(fail);
+  $("#refreshModels").onclick = () => loadModels().catch(fail);
+  $("#preset").onchange = () => { loadPresetText().catch(fail); renderQueue(); };
+  $("#runBtn").onclick = () => S.running
+    ? (S.comparing ? api("/api/compare/stop", {}).then(() => $("#progress").textContent = "stopping after this image...").catch(fail) : api("/api/job/cancel", {})).then(() => $("#progress").textContent = "stopping after this image...").catch(fail)
+    : run().catch(e => { fail(e); finishRun("error"); });
+  $("#cmpOn").onchange = () => { cmpRender(); saveLocal(); };
+  ["#cmpNoFacts", "#cmpFacts"].forEach(s => $(s).onchange = cmpRender);
+  $("#cmpPresets").onchange = cmpRender;
+  $("#drives").onclick = e => { const p = e.target.dataset.p; if (p) browse(p).catch(fail); };
+  $("#go").onclick = goPath;
+  $("#path").onkeydown = e => { if (e.key === "Enter") goPath(); };
+  $("#path").addEventListener("paste", () => setTimeout(goPath, 0));
+  $("#dirs").onclick = e => { const f = e.target.closest(".f"); if (!f) return; if (f.dataset.home) showHome(); else browse(f.dataset.p).catch(fail); };
+  $("#addFolder").onclick = async () => { if (!S.browse) return toast("open a folder first"); const d = await api("/api/expand", {paths: [S.browse.path], recursive: $("#recursive").checked}); if (!d.items.length) return toast("no images found"); addItems(d.items); };
+  $("#cards").onclick = clickCard;
+  $("#cards").ondblclick = e => { const c = e.target.closest(".card"); if (c) showImage(fullPath(+c.dataset.i)); };
+  $("#grid").addEventListener("scroll", () => { if (!G.raf) G.raf = requestAnimationFrame(() => { G.raf = 0; layoutGrid(false); }); });
+  window.addEventListener("resize", () => { layoutGrid(true); balanceChips(); });
+  $("#filter").oninput = () => { S.last = -1; applyFilter(); $("#grid").scrollTop = 0; layoutGrid(true); };
+  $("#selAll").onclick = () => { S.view.forEach(i => S.sel.add(i)); paintSel(); };
+  $("#selNone").onclick = () => { S.sel.clear(); paintSel(); };
+  $("#addSel").onclick = () => { const root = S.browse.path; addItems([...S.sel].sort((a, b) => a - b).map(i => ({image: fullPath(i), root}))); S.sel.clear(); renderGrid(); };
+  $("#tw").oninput = () => { layoutGrid(true); saveLocal(); };
+  $$(".tabs .tab").forEach(b => b.onclick = () => {
+    $$(".tabs .tab").forEach(x => x.classList.toggle("on", x === b));
+    $$("#right .pane").forEach(p => p.classList.toggle("on", p.id === "pane-" + b.dataset.tab));
+    if (b.dataset.tab === "save") { refreshListNames(); if ($("#mFolder").checked) previewNames().catch(fail); }
+    if (b.dataset.tab === "queue") balanceChips();
+  });
+  $("#queue").addEventListener("click", queueEvent); $("#queue").addEventListener("input", queueEvent);
+  ["#onlyNew", "#force"].forEach(s => $(s).addEventListener("change", updateRunLabel));
+  $("#qRemoveAll").onclick = () => {
+    if (!S.queue.length) return;
+    const uns = S.queue.filter(isUnsaved).length;
+    if (confirm(`Remove all ${fmtN(S.queue.length)} images from the queue?${uns ? `\n${fmtN(uns)} of them have prompts that are not saved to a file yet.` : ""}`)) { S.queue = []; QP.page = 0; renderQueue(); renderGrid(); saveQueue(); }
+  };
+  $("#qDiscard").onclick = () => {
+    const n = S.queue.filter(it => (it.prompts || []).length).length; if (!n) return;
+    if (confirm(`Throw away the prompts of ${fmtN(n)} image(s)? The images stay in the queue.`)) { S.queue.forEach(it => { it.prompts = []; it.stats = null; it.status = ""; it.error = ""; it.savedTo = {}; it.meta = null; }); renderQueue(); saveQueue(); }
+  };
+  $("#qLists").onchange = async e => {
+    const v = e.target.value; e.target.value = ""; if (!v) return;
+    if (v === "__save__") { const n = prompt("Name for this queue:"); if (n) { await api("/api/queues/save", {name: n, items: S.queue.map(stripItem)}); toast(`queue saved as "${n}"`); refreshQueueLists(); } return; }
+    const name = v.slice(2);
+    if (S.queue.length && !confirm(`Replace the current queue (${fmtN(S.queue.length)} images) with "${name}"?`)) return;
+    const d = await api(`/api/queues/load?name=${encodeURIComponent(name)}`); S.queue = d.items || []; QP.page = 0; renderQueue(); renderGrid(); saveQueue();
+  };
+  $("#chips").onclick = e => { const id = e.target.dataset.m; if (!id) return; S.mods[id] = {...(S.mods[id] || {}), on: !S.mods[id]?.on}; renderChips(); saveLocal(); updateRiSummary(); };
+  $("#chips").oninput = e => { const id = e.target.dataset.mv; if (id) { S.mods[id].value = e.target.value; saveLocal(); updateRiSummary(); } };
+  $("#runNote").addEventListener("input", updateRiSummary);
+  ["#useFacts", "#factsEth"].forEach(s => $(s).addEventListener("change", () => { updateRiSummary(); saveLocal(); }));
+  $("#composeBtn").onclick = () => showComposed().catch(fail);
+  $("#presetSave").onclick = () => savePreset($("#preset").value).catch(fail);
+  $("#presetSaveAs").onclick = () => { const id = $("#saveAsId").value.trim(); if (!id) return toast("type a new preset id"); savePreset(id).catch(fail); };
+  $("#presetRevert").onclick = () => { $("#presetText").value = $("#presetText").dataset.orig || ""; };
+  $("#planBtn").onclick = () => previewNames().catch(fail);
+  $("#plan").oninput = e => { const g = e.target.dataset.g; if (g) S.overrides[g] = e.target.value.trim(); };
+  $("#saveNow").onclick = () => { const items = S.queue.filter(isUnsaved); if (!items.length) return toast("nothing new to save - every prompt is already saved to the outputs ticked here"); saveFiles(items).catch(fail); };
+  $("#written").onclick = e => { const p = e.target.dataset.open; if (p) api("/api/open", {path: p}).catch(fail); };
+  $("#whenceOut").onclick = e => { const p = e.target.dataset.open; if (p) api("/api/open", {path: p}).catch(fail); };
+  $("#groupDir").addEventListener("change", refreshListNames);
+  ["#mImage", "#mFolder", "#mCombined", "#fmt", "#groupBy", "#combined", "#groupDir"].forEach(s => $(s).addEventListener("change", () => renderQueue()));
+  $("#mFolder").addEventListener("change", () => { if ($("#mFolder").checked) previewNames().catch(fail); else $("#plan").innerHTML = ""; });
+  ["#runNote", "#variations", "#mode", "#ctx", "#temperature", "#maxTokens", "#seed", "#mImage", "#mFolder", "#mCombined", "#autoSave", "#fmt",
+   "#groupBy", "#combined", "#groupDir", "#dedupe", "#sidecar", "#recursive", "#onlyNew"].forEach(s => $(s).addEventListener("change", saveLocal));
+  $("#whenceBtn").onclick = () => whence().catch(fail);
+  $$("input[name=onExists]").forEach(r => r.addEventListener("change", () => { saveLocal(); previewNames().catch(() => {}); }));
+  $("#viewer").onclick = () => $("#viewer").style.display = "none";
+  document.addEventListener("keydown", e => {
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName);
+    if (e.key === "Escape") { if ($("#viewer").style.display === "flex") $("#viewer").style.display = "none"; else if (!typing) { S.sel.clear(); paintSel(); } }
+    if (!typing && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a" && S.browse && !document.body.classList.contains("mode-review")) { e.preventDefault(); S.view.forEach(i => S.sel.add(i)); paintSel(); }
+  });
+  let dragDepth = 0;
+  document.addEventListener("dragenter", e => { if (e.dataTransfer?.types?.includes("Files")) { dragDepth++; document.body.classList.add("dragging"); } });
+  document.addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove("dragging"); } });
+  document.addEventListener("dragover", e => e.preventDefault());
+  document.addEventListener("drop", e => { dragDepth = 0; onDrop(e).catch(fail); });
+}
+
+/* ================================================================ Review mode (Prompt Review phase 1) */
+const R = { defects: [], sweeps: [], folders: [], src: null, data: null, rows: [], view: [], cur: -1, advance: true };
+
+function setMode(mode) {
+  document.body.classList.toggle("mode-review", mode === "review");
+  document.body.classList.toggle("mode-photobash", mode === "photobash");
+  document.body.classList.toggle("mode-ideas", mode === "ideas");
+  document.body.classList.toggle("mode-rewrite", mode === "rewrite");
+  $$(".modes button").forEach(b => b.classList.toggle("on", b.dataset.mode === mode));
+  try { localStorage.setItem("vlmp.mode", mode); } catch {}
+  if (mode === "review" && !R.sweeps.length && !R.folders.length) rvLoadSources().catch(fail);
+  if (mode === "review") rvCheckPoll().catch(() => {});
+}
+function rvSweepLabel(name) {
+  const m = name.match(/^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})_(.*)$/);
+  return m ? {when: `${m[2]}-${m[3]} ${m[4]}:${m[5]}`, title: m[7].replace(/_/g, " ")} : {when: "", title: name};
+}
+async function rvLoadSources() {
+  const d = await api("/api/review/sources");
+  R.defects = d.defects; R.sweeps = d.sweeps; R.folders = d.folders; R.sweepsDir = d.sweeps_dir;
+  rvRenderSources();
+}
+function rvRenderSources() {
+  const f = ($("#rvSrcFilter").value || "").trim().toLowerCase();
+  const on = s => R.src && R.src.path === s.path ? " on" : "";
+  const folders = R.folders.map(s => `<div class="src${on(s)}" data-kind="folder" data-path="${esc(s.path)}" title="${esc(s.path)}">
+      <button class="x rm" data-rm="${esc(s.path)}" title="Remove from this list (the folder is not touched)">✕</button>
+      <div class="t">📁 ${esc(s.name)}</div><div class="m"><span>${s.exists ? "" : "missing · "}${esc(s.path)}</span>${s.rated ? `<span>${s.rated} rated</span>` : ""}</div></div>`).join("");
+  const sweeps = R.sweeps.filter(s => !f || s.name.toLowerCase().includes(f)).map(s => {
+    const l = rvSweepLabel(s.name);
+    return `<div class="src${on(s)}" data-kind="sweep" data-path="${esc(s.path)}" title="${esc(s.path)}">
+      <div class="t">${esc(l.title)}</div><div class="m"><span>${esc(l.when)}</span><span>${s.images} images</span>${s.rated ? `<span>${s.rated} rated</span>` : ""}</div></div>`;
+  }).join("");
+  $("#rvSrcList").innerHTML = (R.folders.length ? `<div class="sect">Folders</div>${folders}` : "") +
+    `<div class="sect">Sweeps <span style="text-transform:none">(${R.sweeps.length})</span></div>${sweeps || '<div class="muted" style="padding:10px">no sweeps found in ' + esc(R.sweepsDir || "") + "</div>"}`;
+}
+async function rvOpen(kind, path) {
+  $("#rvInfo").textContent = "loading…";
+  const d = await api(`/api/review/load?kind=${kind}&path=${encodeURIComponent(path)}`);
+  R.src = {kind, path}; R.data = d; R.cur = -1;
+  const rows = new Map();                                     // group renders by prompt, in first-seen order
+  d.cells.forEach((c, i) => { const k = c.sha || ("noprompt:" + i); if (!rows.has(k)) rows.set(k, []); rows.get(k).push(i); });
+  R.rows = [...rows.values()];
+  rvRenderSources(); rvRenderGrid();
+  if (R.view.length) rvSelect(R.view[0]);
+  if (d.truncated) toast(`showing the first ${d.limit} images of this folder`, 5000);
+}
+function rvPass(c) {
+  const r = c.rating || {};
+  if ($("#rvUnrated").checked && (r.stars || r.keeper || (r.defects || []).length)) return false;
+  if ($("#rvFlagged").checked && !(r.defects || []).length) return false;
+  if ($("#rvKeepers").checked && !r.keeper) return false;
+  if ($("#rvIssues").checked) { const ck = c.check; if (!ck || !((ck.adherence != null && ck.adherence < 70) || (ck.defects || []).length)) return false; }
+  const t = ($("#rvText").value || "").trim().toLowerCase();
+  if (t && !((c.prompt || "").toLowerCase().includes(t) || (c.col || "").toLowerCase().includes(t) || (c.name || "").toLowerCase().includes(t))) return false;
+  return true;
+}
+function rvBadges(c) {
+  const r = c.rating || {};
+  const ck = c.check || {};
+  const vb = (ck.adherence != null ? `<span class="a${ck.adherence < 70 ? " lo" : ""}" title="vision: follows the prompt">A${Math.round(ck.adherence)}</span>` : "") +
+             (ck.fidelity != null ? `<span class="f" title="vision: matches the source">F${Math.round(ck.fidelity)}</span>` : "");
+  return `${vb}${r.stars ? `<span>★${r.stars}</span>` : ""}${r.keeper ? '<span class="k">K</span>' : ""}${(r.defects || []).length ? `<span class="d" title="${esc(r.defects.join(", "))}">⚑${r.defects.length}</span>` : ""}`;
+}
+function rvProvLine(p) {
+  if (!p) return "not made by this app (no provenance)";
+  const model = (p.model || "?").length > 40 ? p.model.slice(0, 38) + "…" : (p.model || "?");
+  return `${model} · ${p.preset || "?"}${(p.modifiers || []).length ? " · " + p.modifiers.join(", ") : ""}`;
+}
+function rvRenderGrid() {
+  const d = R.data; if (!d) return;
+  $("#rvRows").style.setProperty("--rvw", $("#rvSize").value + "px");
+  R.view = [];
+  const side = +$("#rvSize").value > 260 ? 600 : 400;
+  const html = R.rows.map(idxs => {
+    const shown = idxs.filter(i => rvPass(d.cells[i])); if (!shown.length) return "";
+    R.view.push(...shown);
+    const c0 = d.cells[idxs[0]];
+    return `<div class="rvrow"><div class="rh"><span class="pt" title="${esc(c0.prompt || "(no prompt found)")}">${esc(c0.prompt || "(no prompt found in this image)")}</span>
+        <span class="pv" title="${esc((c0.prov && c0.prov.model) || "")}">${esc(rvProvLine(c0.prov))}</span></div>
+      <div class="rvcards">${shown.map(i => { const c = d.cells[i];
+        return `<div class="rvc${i === R.cur ? " sel" : ""}" data-i="${i}" title="${esc(c.col || c.name)}"><img loading="lazy" src="${thumb(c.file, side)}" alt="">
+          <div class="bd">${rvBadges(c)}</div><div class="cap">${esc(c.checkpoint || c.col || c.name)}</div></div>`; }).join("")}</div></div>`;
+  }).join("");
+  $("#rvRows").innerHTML = html || '<div class="muted" style="padding:30px">nothing matches the filters</div>';
+  const rated = d.cells.filter(c => c.rating && (c.rating.stars || c.rating.keeper || (c.rating.defects || []).length)).length;
+  $("#rvInfo").textContent = `${d.cells.length} renders · ${R.rows.length} prompts · ${rated} rated${R.view.length !== d.cells.length ? ` · ${R.view.length} shown` : ""}`;
+}
+function rvUpdateCard(i) {
+  const el = $(`#rvRows .rvc[data-i="${i}"]`); if (el) $(".bd", el).innerHTML = rvBadges(R.data.cells[i]);
+}
+function rvSelect(i) {
+  if (i == null || !R.data) return;
+  const prev = $("#rvRows .rvc.sel"); if (prev) prev.classList.remove("sel");
+  R.cur = i;
+  const el = $(`#rvRows .rvc[data-i="${i}"]`);
+  if (el) { el.classList.add("sel"); el.scrollIntoView({block: "nearest"}); }
+  rvRenderDetail();
+}
+function rvRenderDetail() {
+  const c = R.data && R.data.cells[R.cur]; if (!c) return;
+  const r = c.rating || {}, p = c.prov, pos = R.view.indexOf(R.cur);
+  const defs = new Set(r.defects || []);
+  const words = (c.prompt || "").split(/\s+/).filter(Boolean).length;
+  $("#rvPane").innerHTML = `
+    <div class="nav"><button data-nav="-1">◀</button><span class="muted">${pos + 1} / ${R.view.length}</span><button data-nav="1">▶</button>
+      <label class="muted" style="margin-left:auto" title="Jump to the next render after giving stars"><input type="checkbox" id="rvAdvance" ${R.advance ? "checked" : ""}> next after stars</label></div>
+    <div class="imgs">
+      <div><img src="${thumb(c.file, 1200)}" data-full="${esc(c.file)}" alt=""><div class="lbl">render · ${esc(c.name)}</div></div>
+      <div>${p && p.source_image ? `<img src="${thumb(p.source_image, 1200)}" data-full="${esc(p.source_image)}" alt=""><div class="lbl">source image</div>` : '<div class="muted" style="font-size:12px">no source image known</div>'}</div>
+    </div>
+    <h4>Quality</h4>
+    <div class="stars">${[1, 2, 3, 4, 5].map(n => `<button data-star="${n}" class="${r.stars >= n ? "on" : ""}" title="${n} (key ${n})">★</button>`).join("")}
+      <button data-star="0" title="clear (key 0)" style="font-size:13px">clear</button></div>
+    <div class="tog" style="margin-top:6px"><button class="keep${r.keeper ? " on" : ""}" data-keep="1">keeper<kbd>k</kbd></button></div>
+    <h4>Defects</h4>
+    <div class="tog">${R.defects.map(d => { const sug = ((c.check || {}).defects || []).includes(d.id) && !defs.has(d.id);
+        return `<button data-def="${d.id}" class="${defs.has(d.id) ? "on" : ""}${sug ? " sug" : ""}" title="${sug ? "suggested by the vision check" : ""}">${esc(d.label)}<kbd>${d.key}</kbd></button>`; }).join("")}
+      ${((c.check || {}).defects || []).some(x => !defs.has(x)) ? '<button data-accept="1" title="Add the dashed (suggested) defects to yours">accept suggestions</button>' : ""}</div>
+    <div id="rvVision"><h4>Vision check</h4><div class="muted" style="font-size:12px">${c.check ? "loading…" : "not checked yet - press Check renders above the grid"}</div></div>
+    <h4>Adherence / fidelity <span style="text-transform:none;letter-spacing:0">(0-100: your values override the vision's, shown greyed)</span></h4>
+    <div class="row" style="display:flex;gap:12px">
+      <label class="muted">follows the prompt <input type="number" id="rvAdh" min="0" max="100" step="5" value="${r.adherence ?? ""}" placeholder="${c.check && c.check.adherence != null ? Math.round(c.check.adherence) : ""}" style="width:70px"></label>
+      <label class="muted">matches the source <input type="number" id="rvFidV" min="0" max="100" step="5" value="${r.fidelity ?? ""}" placeholder="${c.check && c.check.fidelity != null ? Math.round(c.check.fidelity) : ""}" style="width:70px"></label></div>
+    <h4>Note</h4>
+    <textarea id="rvNote" rows="2" style="width:100%">${esc(r.note || "")}</textarea>
+    <label class="muted" title="Mark this note as something the prompt should have said differently - collected later into preset rules"><input type="checkbox" id="rvLesson" ${r.lesson ? "checked" : ""}> prompt-writing lesson</label>
+    <h4>Prompt <span style="text-transform:none;letter-spacing:0">(${words} words)</span></h4>
+    <div class="prompt">${esc(c.prompt || "(no prompt found in this image)")}</div>
+    <h4>Made with</h4>
+    <div class="kv">${p ? `<b>${esc(p.model)}</b><br>${p.variant ? `version <b>${esc(p.variant)}</b> · ` : ""}preset <b>${esc(p.preset)}</b> · instructions ${esc(p.instr)}${p.made ? " · " + esc(p.made) : ""}
+      ${(p.modifiers || []).length ? `<br>modifiers: ${esc(p.modifiers.join(", "))}` : ""}${p.note ? `<br>note: ${esc(p.note)}` : ""}
+      ${p.source_image ? `<br>source: <a data-open="${esc(p.source_image)}" style="color:var(--accent);cursor:pointer">${esc(p.source_image)}</a>` : ""}` :
+      "This prompt isn't in the app's index (made elsewhere, or saved before the index existed)."}</div>
+    <h4>Render</h4>
+    <div class="kv">${esc(c.col || "")}${c.seed != null ? `<br>seed ${esc(c.seed)}` : ""}${c.time_s ? ` · ${esc(c.time_s)}s` : ""}${c.clip != null ? ` · clip ${(c.clip * 100).toFixed(1)}%` : ""}
+      ${c.prompt_source ? `<br>prompt read from ${esc(c.prompt_source)}` : ""}<br><a data-open="${esc(c.file)}" style="color:var(--accent);cursor:pointer">${esc(c.file)}</a></div>`;
+  if (c.check) rvLoadVision(c).catch(fail);
+}
+async function rvLoadVision(c) {
+  const d = (await api(`/api/review/check/detail?file=${encodeURIComponent(c.file)}`)).detail;
+  if (!d || R.data.cells[R.cur] !== c) return;
+  const sym = a => a === "yes" ? '<span class="y">✓</span>' : a === "partly" ? '<span class="p">~</span>' : '<span class="n">✗</span>';
+  const adh = d.adherence || {}, fid = d.fidelity, cl = d.checklist || {};
+  const items = (adh.items || []).map(it => `<div class="it">${sym(it.answer)}<div>${esc(it.requirement)}
+      <span class="k">· ${esc(it.kind)}${it.weight === "core" ? " · core" : ""}</span>${it.note ? ` <span class="muted">- ${esc(it.note)}</span>` : ""}
+      ${it.beyond_limit ? '<span class="beyond"> · past the 507-token limit: Krea 2 never read this</span>' : ""}</div></div>`).join("");
+  const asp = fid ? Object.entries(fid.aspects || {}).map(([k, v]) => `<div class="it">${sym(v.answer === "same" ? "yes" : v.answer === "close" ? "partly" : "no")}<div>${esc(k)}${v.note ? ` <span class="muted">- ${esc(v.note)}</span>` : ""}</div></div>`).join("") +
+    (fid.changes || []).map(ch => `<div class="it">${sym(ch.applied ? "yes" : "no")}<div><span class="k">requested:</span> ${esc(ch.change)}${ch.note ? ` <span class="muted">- ${esc(ch.note)}</span>` : ""}</div></div>`).join("") : "";
+  $("#rvVision").innerHTML = `<h4>Vision check <span style="text-transform:none;letter-spacing:0">(${esc((d.model || "").slice(0, 40))} · ${esc(d.checked_at || "")} · ${d.seconds}s · prompt ≈${cl.prompt_tokens || "?"} tokens)</span></h4>
+    <div><span class="score">${adh.score != null ? Math.round(adh.score) : "–"}</span><span class="muted">follows the prompt</span></div>${items}
+    ${(adh.reasons || []).length ? `<div class="muted" style="font-size:12px;margin-top:4px">${esc(adh.reasons.join(" · "))}</div>` : ""}
+    ${fid && fid.pose_check && !fid.pose_check.error ? (() => { const pc = fid.pose_check, mk = m => m === true ? '<span class="y">✓</span>' : m === false ? '<span class="n">✗</span>' : '<span class="k">–</span>';
+        const drift = Object.entries(pc.drift || {}).map(([k, v]) => `${k} ${v}`).join(", ");
+        return `<h4 style="margin-top:10px">Detectors <span style="text-transform:none;letter-spacing:0">(pose + face models)</span></h4>
+        <div class="it">${mk(pc.body.match)}<div>body: source <b>${esc(pc.body.source || "?")}</b>, render <b>${esc(pc.body.render || "?")}</b></div></div>
+        <div class="it">${mk(pc.head.match)}<div>head: source <b>${esc(pc.head.source || "?")}</b>, render <b>${esc(pc.head.render || "?")}</b></div></div>
+        ${pc.pose ? `<div class="it">${pc.pose.mirrored ? '<span class="n">✗</span>' : '<span class="y">✓</span>'}<div>pose ${pc.pose.similarity != null ? Math.round(pc.pose.similarity) + "% similar" : "not comparable"}${pc.pose.mirrored ? " - <b>mirror image of the source</b>" : ""}</div></div>` : ""}
+        ${drift ? `<div class="it"><span class="p">~</span><div>changed between source and render: ${esc(drift)}</div></div>` : ""}
+        <div class="muted" style="font-size:11.5px">source: ${esc(pc.source_facts)}<br>render: ${esc(pc.render_facts)}</div>`; })() : ""}
+    ${fid ? `<div style="margin-top:8px"><span class="score">${Math.round(fid.score)}</span><span class="muted">matches the source (with the requested changes)</span></div>${asp}` :
+      '<div class="muted" style="font-size:12px;margin-top:6px">not compared with a source image</div>'}`;
+}
+async function rvRate(fields) {
+  const c = R.data && R.data.cells[R.cur]; if (!c) return;
+  const d = await api("/api/review/rate", {file: c.file, source: R.src.path, sha: c.sha, ...fields});
+  c.rating = d.rating; rvUpdateCard(R.cur);
+  const sv = R.sweeps.find(s => s.path === R.src.path) || R.folders.find(s => s.path === R.src.path);
+  if (sv) sv.rated = R.data.cells.filter(x => x.rating && (x.rating.stars || x.rating.keeper || (x.rating.defects || []).length)).length;
+  return d.rating;
+}
+function rvMove(step) {
+  if (!R.view.length) return;
+  const pos = R.view.indexOf(R.cur);
+  const next = R.view[Math.max(0, Math.min(R.view.length - 1, (pos < 0 ? 0 : pos + step)))];
+  rvSelect(next);
+}
+async function rvStars(n) {
+  await rvRate({stars: n || null});
+  if (n && R.advance) rvMove(1); else rvRenderDetail();
+}
+async function rvToggleDefect(id) {
+  const c = R.data.cells[R.cur]; const set = new Set((c.rating && c.rating.defects) || []);
+  set.has(id) ? set.delete(id) : set.add(id);
+  await rvRate({defects: [...set]}); rvRenderDetail();
+}
+async function rvToggleKeeper() { const c = R.data.cells[R.cur]; await rvRate({keeper: !(c.rating && c.rating.keeper)}); rvRenderDetail(); }
+async function rvCheckStart() {
+  if (R.checkRunning) { await api("/api/review/check/stop", {}); $("#rvCheckState").textContent = "stopping after this render…"; return; }
+  if (!R.src) return toast("open a sweep or folder first");
+  const todo = R.data.cells.filter(c => c.prompt && ($("#rvRedo").checked || !c.check)).length;
+  if (!todo) return toast("every render here is already checked - tick redo to check again");
+  const per = $("#rvFid").checked ? "~2 looks" : "1 look";
+  if (todo > 30 && !confirm(`Vision-check ${todo} renders (${per} each) with the LM Studio model?`)) return;
+  await api("/api/review/check/start", {kind: R.src.kind, path: R.src.path, model: $("#model").value, mode: $("#mode").value,
+    force: $("#rvRedo").checked, fidelity: $("#rvFid").checked});
+  rvCheckPoll();
+}
+async function rvCheckPoll() {
+  if (R.polling) return; R.polling = true;
+  let lastDone = -1;
+  try {
+    while (true) {
+      const s = await api("/api/review/check/status");
+      R.checkRunning = !!s.running;
+      $("#rvCheck").textContent = s.running ? "■ Stop checks" : "Check renders";
+      $("#rvCheck").className = s.running ? "danger" : "primary";
+      const eta = s.running && s.done ? Math.round((Date.now() / 1000 - s.started) / s.done * (s.total - s.done)) : 0;
+      $("#rvCheckState").textContent = s.total != null && (s.running || s.finished) ?
+        `${s.done || 0}/${s.total}${s.errors ? `, ${s.errors} errors` : ""}${s.running ? (eta ? ` · ~${Math.ceil(eta / 60)} min left` : " · starting…") : " · done"}` : "";
+      if (s.last_error) $("#rvCheckState").title = s.last_error;
+      if ((s.done || 0) !== lastDone && R.src && s.source && s.source.toLowerCase() === R.src.path.toLowerCase()) { lastDone = s.done || 0; await rvRefreshChecks(); }
+      if (!s.running) break;
+      await new Promise(r => setTimeout(r, 2500));
+    }
+  } catch (e) { fail(e); }
+  R.polling = false;
+}
+async function rvRefreshChecks() {
+  const d = await api(`/api/review/load?kind=${R.src.kind}&path=${encodeURIComponent(R.src.path)}`);
+  const by = new Map(d.cells.map(c => [c.file, c.check]));
+  R.data.cells.forEach((c, i) => { const n = by.get(c.file); if (JSON.stringify(n) !== JSON.stringify(c.check)) { c.check = n; rvUpdateCard(i); if (i === R.cur) rvRenderDetail(); } });
+}
+// ---------------------------------------------------------------- results lists that survive a reload
+function resKeep(key, list) { try { localStorage.setItem("vlmp.res." + key, JSON.stringify(list.slice(-400))); } catch {} }
+function resLoad(key) { try { return JSON.parse(localStorage.getItem("vlmp.res." + key) || "[]"); } catch { return []; } }
+// ---------------------------------------------------------------- Rewrite
+const RW = {items: [], op: "edit", results: [], since: 0, polling: false,
+  chips: ["change the style to a professional photograph", "change the style to a vintage illustration", "make it more surreal",
+          "make it happier", "make it darker and more dramatic", "change the era to the 1920s", "replace the main subject with "]};
+function rwSave() { try { localStorage.setItem("vlmp.rw", JSON.stringify({op: RW.op, instr: $("#rwInstr").value, rules: $("#rwRules").value,
+  words: $("#rwWords").value, keep: $("#rwKeep").value, v: $("#rwVar").value})); } catch {} }
+function rwLoadLocal() { try { const d = JSON.parse(localStorage.getItem("vlmp.rw") || "{}"); RW.op = d.op || "edit";
+  if (d.instr) $("#rwInstr").value = d.instr; if (d.rules) $("#rwRules").value = d.rules; if (d.words) $("#rwWords").value = d.words;
+  if (d.keep) $("#rwKeep").value = d.keep; if (d.v) $("#rwVar").value = d.v; } catch {} }
+function rwRenderOp() {
+  $$("#rwOps button").forEach(b => b.classList.toggle("on", b.dataset.op === RW.op));
+  $("#rwEditBox").style.display = RW.op === "edit" || RW.op === "pair" ? "" : "none";
+  $("#rwInstr").placeholder = RW.op === "pair" ? "the one change for the twin, e.g. replace the woman with an old fisherman" : "the change, e.g. change the style to a professional fashion photograph";
+  $("#rwRules").style.display = RW.op === "rules" ? "" : "none";
+  $("#rwFactsBox").style.display = RW.op === "refine" ? "" : "none";
+  $("#rwVarBox").style.display = RW.op === "variations" ? "" : "none";
+}
+function rwSetItems(items, label) {
+  RW.items = items.filter(i => (i.text || "").trim());
+  const withImg = RW.items.filter(i => i.image).length;
+  $("#rwCount").textContent = `${RW.items.length} prompts${label ? " from " + label : ""}${withImg ? `, ${withImg} with a known source image` : ""}`;
+}
+function rwSendTo(items, label) { rwSetItems(items, label); setMode("rewrite"); toast(`${RW.items.length} prompts sent to Rewrite`); }
+function rwDiff(a, b) {           // word-level diff: deleted struck through, inserted highlighted
+  const x = a.split(/\s+/), y = b.split(/\s+/);
+  if (x.length * y.length > 400000) return esc(b);
+  const L = Array.from({length: x.length + 1}, () => new Uint16Array(y.length + 1));
+  for (let i = x.length - 1; i >= 0; i--) for (let j = y.length - 1; j >= 0; j--)
+    L[i][j] = x[i] === y[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  let i = 0, j = 0; const out = [];
+  while (i < x.length && j < y.length) {
+    if (x[i] === y[j]) { out.push(esc(x[i])); i++; j++; }
+    else if (L[i + 1][j] >= L[i][j + 1]) out.push(`<del>${esc(x[i++])}</del>`);
+    else out.push(`<ins>${esc(y[j++])}</ins>`);
+  }
+  while (i < x.length) out.push(`<del>${esc(x[i++])}</del>`);
+  while (j < y.length) out.push(`<ins>${esc(y[j++])}</ins>`);
+  return out.join(" ");
+}
+function rwCard(r) {
+  return `<div class="pbr${r.flags.length ? " rwflag" : ""}" data-rn="${r.n}">
+    <div class="pbrh"><label><input type="checkbox" data-rkeep="${r.n}" ${r.keep ? "checked" : ""}> #${r.src_index}${r.k > 1 || RW.op === "variations" ? "." + r.k : ""}</label>
+      ${r.image ? `<img src="${thumb(r.image, 80)}" style="width:28px;height:28px;object-fit:cover;border-radius:4px" alt="">` : ""}
+      <span style="flex:1">${r.flags.map(f => `<span class="rwbadge">${esc(f)}</span>`).join(" ")}</span>
+      <button data-rdiff="${r.n}" title="Show what changed">diff</button><button data-rcopy="${r.n}">copy</button></div>
+    <div class="pbtext" contenteditable="true" data-redit="${r.n}">${esc(r.prompt)}</div>
+    <div class="rwdiff" id="rwd${r.n}" style="display:none"></div></div>`;
+}
+function rwRenderResults() {
+  const only = $("#rwFlagged").checked;
+  $("#rwResults").innerHTML = RW.results.filter(r => !only || r.flags.length).map(rwCard).join("");
+  const fl = RW.results.filter(r => r.flags.length).length;
+  $("#rwSummary").textContent = RW.results.length ? `${RW.results.length} rewrites, ${fl} flagged` : "";
+}
+async function rwRun() {
+  const st = await api("/api/rewrite/status?since=0");
+  if (st.running) { await api("/api/rewrite/stop", {}); $("#rwState").textContent = "stopping..."; return; }
+  if (!RW.items.length) return toast("load or paste prompts first");
+  if ($("#model").value === "__loaded__" && !(S.loaded || []).length) return toast("nothing is loaded in LM Studio - load a model there or pick one at the top", 5000);
+  await api("/api/rewrite/start", {layout: layoutSpec(), items: RW.items, op: RW.op, instruction: $("#rwInstr").value.trim(), rules: $("#rwRules").value.trim(),
+    variations: +$("#rwVar").value || 3, words: $("#rwWords").value, keep: $("#rwKeep").value, facts: $("#rwFacts").checked,
+    preset: $("#preset").value, model: $("#model").value, reasoning: $("#mode").value});
+  RW.since = 0; rwPoll();
+}
+async function rwPoll() {
+  if (RW.polling) return; RW.polling = true;
+  try {
+    while (true) {
+      const s = await api(`/api/rewrite/status?since=${RW.since}`);
+      if (s.results.length) { s.results.forEach(r => { r.keep = true; r.n = ++RW.seq; RW.results.push(r); }); RW.since += s.results.length; rwRenderResults(); resKeep("rw", RW.results); }
+      $("#rwRun").textContent = s.running ? "■ Stop" : "Rewrite"; $("#rwRun").className = s.running ? "danger" : "primary";
+      $("#rwState").textContent = s.total ? `${s.done || 0}/${s.total}${s.errors ? `, ${s.errors} errors` : ""}${s.running ? "" : " · done"}` : "";
+      if (s.last_error) { $("#rwState").title = s.last_error; if (!s.running && !s.count) toast(s.last_error, 8000); }
+      if (!s.running) break;
+      await new Promise(r => setTimeout(r, 1200));
+    }
+  } catch (e) { fail(e); }
+  RW.polling = false;
+}
+async function rwSaveList(all) {
+  const rows = RW.results.filter(r => all || r.keep);
+  if (!rows.length) return toast("nothing to save");
+  const d = await api("/api/rewrite/save", {results: rows, name: $("#rwName").value.trim()});
+  toast("saved " + rows.length + " prompts to " + d.path, 8000);
+}
+function rwWire() {
+  rwLoadLocal(); rwRenderOp();
+  RW.results = resLoad("rw"); RW.seq = RW.results.reduce((m, r) => Math.max(m, r.n), 0); rwRenderResults();
+  $("#rwClearRes").onclick = () => { if (RW.results.length && !confirm(`Clear ${RW.results.length} rewrites from the list?`)) return; RW.results = []; RW.seq = 0; resKeep("rw", []); rwRenderResults(); };
+  $("#rwChips").innerHTML = RW.chips.map(c => `<button data-chip="${esc(c)}">${esc(c.replace("change the style to ", "to ").replace("replace the main subject with ", "replace subject…"))}</button>`).join("");
+  $("#rwChips").onclick = e => { const b = e.target.closest("[data-chip]"); if (!b) return; $("#rwInstr").value = b.dataset.chip; $("#rwInstr").focus(); rwSave(); };
+  $("#rwOps").onclick = e => { const b = e.target.closest("[data-op]"); if (b) { RW.op = b.dataset.op; rwRenderOp(); rwSave(); } };
+  $("#rwLoad").onclick = async () => { const p = $("#rwPath").value.trim(); if (!p) return toast("paste the path of a prompt list file");
+    const d = await api("/api/rewrite/load", {path: p}); rwSetItems(d.items, p.split(/[\\/]/).pop()); };
+  $("#rwUsePaste").onclick = async () => { const d = await api("/api/rewrite/split", {text: $("#rwPaste").value}); rwSetItems(d.items, "pasted text"); };
+  ["#rwInstr", "#rwRules", "#rwWords", "#rwKeep", "#rwVar"].forEach(s => $(s).addEventListener("change", rwSave));
+  $("#rwRun").onclick = () => rwRun().catch(fail);
+  $("#rwFlagged").onchange = rwRenderResults;
+  $("#rwResults").onclick = e => {
+    const c = e.target.closest("[data-rcopy]"); if (c) { navigator.clipboard.writeText(RW.results.find(x => x.n === +c.dataset.rcopy).prompt).then(() => toast("copied")); return; }
+    const d = e.target.closest("[data-rdiff]"); if (d) { const r = RW.results.find(x => x.n === +d.dataset.rdiff), box = $("#rwd" + r.n);
+      if (box.style.display === "none") { box.innerHTML = rwDiff(r.src, r.prompt); box.style.display = ""; } else box.style.display = "none"; }
+  };
+  $("#rwResults").onchange = e => { const k = e.target.dataset.rkeep; if (k) RW.results.find(x => x.n === +k).keep = e.target.checked; };
+  $("#rwResults").addEventListener("input", e => { const n = e.target.dataset.redit; if (n) RW.results.find(x => x.n === +n).prompt = e.target.innerText; });
+  $("#rwSaveKept").onclick = () => rwSaveList(false).catch(fail);
+  $("#pbToRw").onclick = () => rwSendTo(PB.results.filter(r => r.keep).map(r => ({text: r.prompt, image: ""})), "photobash");
+  $("#idToRw").onclick = () => rwSendTo(ID.results.filter(r => r.keep).map(r => ({text: r.prompt, image: ""})), "ideas");
+  $("#qToRw").onclick = () => rwSendTo(S.queue.flatMap(it => (it.prompts || []).map(p => ({text: p, image: it.image}))), "the queue");
+  $("#rwSaveAll").onclick = () => rwSaveList(true).catch(fail);
+}
+// ---------------------------------------------------------------- Ideas (no images)
+const ID = {mode: "brief", results: [], since: 0, polling: false, dice: ["genre", "era", "medium", "light", "palette", "mood", "camera", "place"], on: null};
+function idSave() { try { localStorage.setItem("vlmp.ideas", JSON.stringify({mode: ID.mode, on: ID.on, brief: $("#idBrief").value, template: $("#idTemplate").value,
+  count: $("#idCount").value, temp: $("#idTemp").value, polish: $("#idPolish").checked})); } catch {} }
+function idLoad() {
+  try { const d = JSON.parse(localStorage.getItem("vlmp.ideas") || "{}"); ID.mode = d.mode || "brief"; ID.on = d.on || null;
+    if (d.brief) $("#idBrief").value = d.brief; if (d.template) $("#idTemplate").value = d.template; if (d.count) $("#idCount").value = d.count;
+    if (d.temp) $("#idTemp").value = d.temp; if (d.polish !== undefined) $("#idPolish").checked = d.polish; } catch {}
+  if (!ID.on) ID.on = [...ID.dice];
+}
+function idRenderMode() {
+  $$(".idtabs button").forEach(b => b.classList.toggle("on", b.dataset.idm === ID.mode));
+  $("#idDiceBox").style.display = ID.mode === "dice" ? "" : "none";
+  $("#idWcBox").style.display = ID.mode === "wildcards" ? "" : "none";
+  $("#idBrief").style.display = ID.mode === "wildcards" ? "none" : "";
+  $("#idDice").innerHTML = ID.dice.map(f => `<button data-d="${f}" class="${ID.on.includes(f) ? "on" : ""}">${f}</button>`).join("");
+}
+function idCard(r) {
+  const extra = r.roll ? Object.entries(r.roll).map(([k, v]) => `${k}: ${v}`).join(" · ") : (r.filled && r.filled !== r.prompt ? "from: " + r.filled : "");
+  return `<div class="pbr"><div class="pbrh"><label><input type="checkbox" data-ikeep="${r.n}" ${r.keep ? "checked" : ""}> idea ${r.n}</label>
+    <span class="muted" style="flex:1">${esc(extra)}</span><button data-icopy="${r.n}">copy</button></div>
+    <div class="pbtext" contenteditable="true" data-iedit="${r.n}">${esc(r.prompt)}</div></div>`;
+}
+async function idRun() {
+  const st = await api("/api/ideas/status?since=0");
+  if (st.running) { await api("/api/ideas/stop", {}); $("#idState").textContent = "stopping..."; return; }
+  const needModel = ID.mode !== "wildcards" || $("#idPolish").checked;
+  if (needModel && $("#model").value === "__loaded__" && !(S.loaded || []).length) return toast("nothing is loaded in LM Studio - load a model there or pick one at the top", 5000);
+  await api("/api/ideas/start", {layout: layoutSpec(), mode: ID.mode, brief: $("#idBrief").value.trim(), template: $("#idTemplate").value.trim(), polish: $("#idPolish").checked,
+    dice: ID.on, count: +$("#idCount").value || 8, temperature: +$("#idTemp").value || 1.0, seed: $("#idSeed").value.trim(),
+    preset: $("#preset").value, model: $("#model").value, reasoning: $("#mode").value});
+  ID.since = 0; idPoll();
+}
+async function idPoll() {
+  if (ID.polling) return; ID.polling = true;
+  try {
+    while (true) {
+      const s = await api(`/api/ideas/status?since=${ID.since}`);
+      if (s.results.length) { s.results.forEach(r => { r.keep = true; r.n = ++ID.seq; ID.results.push(r); $("#idResults").insertAdjacentHTML("beforeend", idCard(r)); }); ID.since += s.results.length; resKeep("id", ID.results); }
+      $("#idRun").textContent = s.running ? "■ Stop" : "Make ideas"; $("#idRun").className = s.running ? "danger" : "primary";
+      $("#idState").textContent = s.total ? `${s.done || 0}/${s.total}${s.errors ? `, ${s.errors} errors` : ""}${s.running ? "" : " · done"}` : "";
+      if (s.last_error) { $("#idState").title = s.last_error; if (!s.running && !s.count) toast(s.last_error, 8000); }
+      if (!s.running) break;
+      await new Promise(r => setTimeout(r, 1200));
+    }
+  } catch (e) { fail(e); }
+  ID.polling = false;
+}
+async function idSaveList(all) {
+  const rows = ID.results.filter(r => all || r.keep);
+  if (!rows.length) return toast("nothing to save");
+  const d = await api("/api/ideas/save", {results: rows, name: $("#idName").value.trim()});
+  toast("saved " + rows.length + " prompts to " + d.path, 8000);
+}
+function idWire() {
+  idLoad(); idRenderMode();
+  ID.results = resLoad("id"); ID.seq = ID.results.reduce((m, r) => Math.max(m, r.n), 0); $("#idResults").innerHTML = ID.results.map(idCard).join("");
+  $("#idClearRes").onclick = () => { if (ID.results.length && !confirm(`Clear ${ID.results.length} ideas from the list?`)) return; ID.results = []; ID.seq = 0; resKeep("id", []); $("#idResults").innerHTML = ""; };
+  $(".idtabs").onclick = e => { const b = e.target.closest("[data-idm]"); if (b) { ID.mode = b.dataset.idm; idRenderMode(); idSave(); } };
+  $("#idDice").onclick = e => { const b = e.target.closest("[data-d]"); if (!b) return; const k = ID.on.indexOf(b.dataset.d);
+    if (k >= 0) ID.on.splice(k, 1); else ID.on.push(b.dataset.d); idRenderMode(); idSave(); };
+  let t = null;
+  $("#idWcSearch").oninput = e => { clearTimeout(t); t = setTimeout(async () => {
+    const q = e.target.value.trim(); if (q.length < 2) { $("#idWcHits").innerHTML = ""; return; }
+    const d = await api(`/api/ideas/wildcards?q=${encodeURIComponent(q)}`);
+    $("#idWcHits").innerHTML = (d.hits.length ? d.hits.map(h => `<button data-wc="${esc(h)}" title="insert __${esc(h)}__">${esc(h)}</button>`).join("") : '<span class="muted">no match</span>') +
+      `<div class="muted" style="font-size:11px;width:100%">${d.total} wildcard files indexed</div>`; }, 250); };
+  $("#idWcHits").onclick = e => { const b = e.target.closest("[data-wc]"); if (!b) return; const ta = $("#idTemplate");
+    const ins = `__${b.dataset.wc}__`; const p = ta.selectionStart ?? ta.value.length; ta.value = ta.value.slice(0, p) + ins + ta.value.slice(p); ta.focus(); idSave(); };
+  ["#idBrief", "#idTemplate", "#idCount", "#idTemp", "#idPolish"].forEach(s => $(s).addEventListener("change", idSave));
+  $("#idRun").onclick = () => idRun().catch(fail);
+  $("#idResults").onclick = e => { const c = e.target.closest("[data-icopy]"); if (c) navigator.clipboard.writeText(ID.results.find(x => x.n === +c.dataset.icopy).prompt).then(() => toast("copied")); };
+  $("#idResults").onchange = e => { const k = e.target.dataset.ikeep; if (k) ID.results.find(x => x.n === +k).keep = e.target.checked; };
+  $("#idResults").addEventListener("input", e => { const n = e.target.dataset.iedit; if (n) ID.results.find(x => x.n === +n).prompt = e.target.innerText; });
+  $("#idSaveKept").onclick = () => idSaveList(false).catch(fail);
+  $("#idSaveAll").onclick = () => idSaveList(true).catch(fail);
+}
+// ---------------------------------------------------------------- Photobash
+const PB = {slots: [], results: [], since: 0, polling: false, facets: ["subject", "pose", "clothing", "setting", "light", "palette", "style", "genre", "era", "mood", "composition", "texture"]};
+function layoutSpec() { return {aspect: $("#lyAspect").value, mp: +$("#lyMP").value || 1.0}; }
+function layoutShow() {
+  const p = (S.presets || []).find(x => x.id === $("#preset").value);
+  $("#lyBox").style.display = p && p.layout ? "" : "none";
+}
+function pbSave() { try { localStorage.setItem("vlmp.pb", JSON.stringify({slots: PB.slots, mode: $("#pbMode").value, mixes: $("#pbMixes").value, temp: $("#pbTemp").value, note: $("#pbNote").value,
+  noText: $("#pbNoText").checked, noMarks: $("#pbNoMarks").checked, addText: $("#pbAddText").value, textWhere: $("#pbTextWhere").value})); } catch {} }
+function pbLoad() {
+  try { const d = JSON.parse(localStorage.getItem("vlmp.pb") || "{}"); PB.slots = d.slots || [];
+    if (d.mode) $("#pbMode").value = d.mode; if (d.mixes) $("#pbMixes").value = d.mixes; if (d.temp) $("#pbTemp").value = d.temp; if (d.note) $("#pbNote").value = d.note;
+    if (d.noText !== undefined) $("#pbNoText").checked = d.noText; if (d.noMarks !== undefined) $("#pbNoMarks").checked = d.noMarks;
+    if (d.addText) $("#pbAddText").value = d.addText; if (d.textWhere) $("#pbTextWhere").value = d.textWhere; } catch {}
+}
+function pbAdd(path, isFolder) {
+  if (PB.slots.length >= 4) return toast("photobash takes up to 4 sources");
+  if (PB.slots.some(s => s.path.toLowerCase() === path.toLowerCase())) return;
+  PB.slots.push({path, folder: !!isFolder, weight: 50, only: []});
+}
+function pbRenderSlots() {
+  $("#pbSlots").innerHTML = PB.slots.length ? PB.slots.map((s, i) => `<div class="pbslot" data-i="${i}">
+      <div class="pbthumb">${s.folder ? '<div class="pbfolder">pool</div>' : `<img src="${thumb(s.path, 200)}" alt="">`}</div>
+      <div class="pbbody">
+        <div class="pbpath" title="${esc((s.folders || [s.path]).join("\n"))}">${i + 1}. ${s.folder ? esc((s.folders || [s.path]).map(f => f.split(/[\\/]/).pop()).join(" + ")) + ' <span class="muted">(random image per mix from ' + ((s.folders || [s.path]).length > 1 ? "these folders" : "this folder") + ')</span>' : esc(s.path.split(/[\\/]/).pop())}</div>
+        ${s.folder ? `<button data-addf="${i}" style="font-size:11.5px;padding:1px 7px" title="Add the folder open in the gallery to this pool">+ add the gallery's folder</button>` : ""}
+        <div class="pbw">weight <input type="range" min="0" max="100" value="${s.weight}" data-w="${i}"> <span>${s.weight}</span>
+          <button data-rm="${i}" title="Remove this source" style="margin-left:auto">✕</button></div>
+        <div class="pbfac">${PB.facets.map(f => `<button data-f="${f}" data-s="${i}" class="${s.only.includes(f) ? "on" : ""}" title="${s.only.includes(f) ? "click to stop using this aspect" : "use ONLY ticked aspects from this source"}">${f}</button>`).join("")}</div>
+        <div class="muted" style="font-size:11.5px">${s.only.length ? `uses <b>only</b> its ${esc(s.only.join(", "))} - everything else comes from the other sources (untick all to use everything)` : "uses <b>everything</b> from this source - tick aspects to use <b>only</b> those"}</div>
+      </div></div>`).join("")
+    : '<div class="muted" style="padding:10px 0">Select 2-4 images in the gallery and press "+ selected images", or open a folder and add it as a pool.</div>';
+}
+function pbRenderResults(append) {
+  const html = r => `<div class="pbr" data-n="${r.n}">
+      <div class="pbrh"><label><input type="checkbox" data-keep="${r.n}" ${r.keep ? "checked" : ""}> mix ${r.n}</label>
+        <span class="pbsrc">${r.images.map((p, i) => `<img src="${thumb(p, 120)}" title="${esc(p)} - weight ${r.weights[i]}" alt="">`).join("")}</span>
+        <span class="muted">${esc(r.mode)}${Object.keys(r.assignment || {}).length ? " · " + Object.entries(r.assignment).map(([f, n]) => `${f}:${n}`).join(" ") : ""}</span>
+        <button data-copy="${r.n}" title="Copy the prompt">copy</button></div>
+      <div class="pbtext" contenteditable="true" data-edit="${r.n}">${esc(r.prompt)}</div></div>`;
+  if (!append) $("#pbResults").innerHTML = "";
+  (append || PB.results).forEach(r => $("#pbResults").insertAdjacentHTML("beforeend", html(r)));
+}
+async function pbRun() {
+  const st = await api("/api/photobash/status?since=0");
+  if (st.running) { await api("/api/photobash/stop", {}); $("#pbState").textContent = "stopping after this mix..."; return; }
+  if (PB.slots.length < 2) return toast("add at least two sources");
+  if ($("#model").value === "__loaded__" && !(S.loaded || []).length) return toast("nothing is loaded in LM Studio - load a model there or pick one at the top", 5000);
+  const sources = PB.slots.map(s => ({path: s.path, paths: s.folder ? (s.folders || [s.path]) : undefined, weight: s.weight, take: s.only.length ? s.only : "everything"}));
+  await api("/api/photobash/start", {layout: layoutSpec(), sources, mode: $("#pbMode").value, mixes: +$("#pbMixes").value || 4, temperature: +$("#pbTemp").value || 0.9,
+    seed: $("#pbSeed").value.trim(), note: $("#pbNote").value.trim(), preset: $("#preset").value, model: $("#model").value, reasoning: $("#mode").value,
+    avoid_text: $("#pbNoText").checked, avoid_marks: $("#pbNoMarks").checked, add_text: $("#pbAddText").value.trim(), text_where: $("#pbTextWhere").value.trim()});
+  PB.since = 0; pbPoll();                                 // results accumulate; "clear results" empties
+}
+async function pbPoll() {
+  if (PB.polling) return; PB.polling = true;
+  try {
+    while (true) {
+      const s = await api(`/api/photobash/status?since=${PB.since}`);
+      if (s.results.length) { s.results.forEach(r => { r.keep = true; r.n = ++PB.seq; }); PB.results.push(...s.results); PB.since += s.results.length; pbRenderResults(s.results); resKeep("pb", PB.results); }
+      $("#pbRun").textContent = s.running ? "■ Stop" : "Make mixes"; $("#pbRun").className = s.running ? "danger" : "primary";
+      $("#pbState").textContent = s.total ? `${s.done || 0}/${s.total}${s.errors ? `, ${s.errors} errors` : ""}${s.running ? "" : " · done"}` : "";
+      if (s.last_error) $("#pbState").title = s.last_error;
+      if (!s.running) break;
+      await new Promise(r => setTimeout(r, 1500));
+    }
+  } catch (e) { fail(e); }
+  PB.polling = false;
+}
+async function pbSaveList(all) {
+  const rows = PB.results.filter(r => all || r.keep);
+  if (!rows.length) return toast("nothing to save");
+  const d = await api("/api/photobash/save", {results: rows, name: $("#pbName").value.trim()});
+  toast("saved " + rows.length + " prompts to " + d.path, 8000);
+}
+function pbWire() {
+  $("#preset").addEventListener("change", layoutShow); setTimeout(layoutShow, 800);
+  try { const L = JSON.parse(localStorage.getItem("vlmp.layout") || "{}"); if (L.aspect) $("#lyAspect").value = L.aspect; if (L.mp) $("#lyMP").value = L.mp; } catch {}
+  ["#lyAspect", "#lyMP"].forEach(s => $(s).addEventListener("change", () => { try { localStorage.setItem("vlmp.layout", JSON.stringify(layoutSpec())); } catch {} }));
+  pbLoad(); pbRenderSlots();
+  PB.results = resLoad("pb"); PB.seq = PB.results.reduce((m, r) => Math.max(m, r.n), 0); pbRenderResults();
+  $("#pbClearRes").onclick = () => { if (PB.results.length && !confirm(`Clear ${PB.results.length} mixes from the list?`)) return; PB.results = []; PB.seq = 0; resKeep("pb", []); pbRenderResults(); };
+  $("#pbAddSel").onclick = () => { if (!S.sel.size) return toast("select images in the gallery first");
+    [...S.sel].sort((a, b) => a - b).forEach(i => pbAdd(fullPath(i), false)); pbRenderSlots(); pbSave(); };
+  $("#pbAddFolder").onclick = () => { if (!S.browse || !S.browse.path) return toast("open a folder in the gallery first"); pbAdd(S.browse.path, true); pbRenderSlots(); pbSave(); };
+  $("#pbClear").onclick = () => { PB.slots = []; pbRenderSlots(); pbSave(); };
+  $("#pbSlots").oninput = e => { const w = e.target.dataset.w; if (w !== undefined) { PB.slots[+w].weight = +e.target.value; e.target.nextElementSibling.textContent = e.target.value; pbSave(); } };
+  $("#pbSlots").onclick = e => {
+    const rm = e.target.closest("[data-rm]"); if (rm) { PB.slots.splice(+rm.dataset.rm, 1); pbRenderSlots(); pbSave(); return; }
+    const af = e.target.closest("[data-addf]"); if (af) { const s = PB.slots[+af.dataset.addf], p = S.browse && S.browse.path;
+      if (!p) return toast("open a folder in the gallery first"); s.folders = s.folders || [s.path];
+      if (s.folders.some(f => f.toLowerCase() === p.toLowerCase())) return toast("that folder is already in this pool");
+      s.folders.push(p); pbRenderSlots(); pbSave(); return; }
+    const f = e.target.closest("[data-f]"); if (f) { const s = PB.slots[+f.dataset.s]; const k = s.only.indexOf(f.dataset.f);
+      if (k >= 0) s.only.splice(k, 1); else s.only.push(f.dataset.f); pbRenderSlots(); pbSave(); }
+  };
+  ["#pbMode", "#pbMixes", "#pbTemp", "#pbNote", "#pbNoText", "#pbNoMarks", "#pbAddText", "#pbTextWhere"].forEach(s => $(s).addEventListener("change", pbSave));
+  $("#pbRun").onclick = () => pbRun().catch(fail);
+  $("#pbResults").onclick = e => {
+    const c = e.target.closest("[data-copy]"); if (c) { const r = PB.results.find(x => x.n === +c.dataset.copy); navigator.clipboard.writeText(r.prompt).then(() => toast("copied")); }
+  };
+  $("#pbResults").onchange = e => { const k = e.target.dataset.keep; if (k) { PB.results.find(x => x.n === +k).keep = e.target.checked; resKeep("pb", PB.results); } };
+  $("#pbResults").addEventListener("input", e => { const n = e.target.dataset.edit; if (n) PB.results.find(x => x.n === +n).prompt = e.target.innerText; });
+  $("#pbSaveKept").onclick = () => pbSaveList(false).catch(fail);
+  $("#pbSaveAll").onclick = () => pbSaveList(true).catch(fail);
+}
+function rvWire() {
+  $("#rvCheck").onclick = () => rvCheckStart().catch(fail);
+  $("#rvReport").onclick = e => { e.preventDefault(); if (!R.src) return toast("open a sweep or folder first");
+    window.open(`/report?kind=${R.src.kind}&path=${encodeURIComponent(R.src.path)}`, "_blank"); };
+  $$(".modes button").forEach(b => b.onclick = () => setMode(b.dataset.mode));
+  $("#rvSrcFilter").oninput = rvRenderSources;
+  $("#rvSrcList").onclick = e => {
+    const rm = e.target.dataset.rm;
+    if (rm) { e.stopPropagation(); api("/api/review/folders", {remove: rm}).then(rvLoadSources).catch(fail); return; }
+    const s = e.target.closest(".src"); if (s) rvOpen(s.dataset.kind, s.dataset.path).catch(fail);
+  };
+  $("#rvAdd").onclick = async () => {
+    const p = $("#rvAddPath").value.trim().replace(/^["']|["']$/g, ""); if (!p) return;
+    await api("/api/review/folders", {add: p}); $("#rvAddPath").value = ""; await rvLoadSources(); rvOpen("folder", R.folders[0].path).catch(fail);
+  };
+  $("#rvAddPath").onkeydown = e => { if (e.key === "Enter") $("#rvAdd").click(); };
+  ["#rvUnrated", "#rvFlagged", "#rvKeepers", "#rvIssues"].forEach(s => $(s).onchange = rvRenderGrid);
+  $("#rvText").oninput = rvRenderGrid;
+  $("#rvSize").oninput = () => $("#rvRows").style.setProperty("--rvw", $("#rvSize").value + "px");
+  $("#rvSize").onchange = rvRenderGrid;
+  $("#rvRows").onclick = e => { const c = e.target.closest(".rvc"); if (c) rvSelect(+c.dataset.i); };
+  $("#rvRows").ondblclick = e => { const c = e.target.closest(".rvc"); if (c) showImage(R.data.cells[+c.dataset.i].file); };
+  $("#rvExport").onclick = async () => {
+    if (!R.src) return toast("open a sweep or folder first");
+    const d = await api("/api/review/export", {kind: R.src.kind, path: R.src.path});
+    toast("wrote " + d.path, 6000); api("/api/open", {path: d.path}).catch(() => {});
+  };
+  $("#rvPane").addEventListener("click", e => {
+    const t = e.target.closest("[data-star],[data-def],[data-keep],[data-nav],[data-full],[data-open],[data-accept]"); if (!t) return;
+    if (t.dataset.accept) { const c = R.data.cells[R.cur]; const set = new Set([...((c.rating || {}).defects || []), ...((c.check || {}).defects || [])]);
+      rvRate({defects: [...set]}).then(rvRenderDetail).catch(fail); return; }
+    if (t.dataset.star != null) rvStars(+t.dataset.star).catch(fail);
+    else if (t.dataset.def) rvToggleDefect(t.dataset.def).catch(fail);
+    else if (t.dataset.keep) rvToggleKeeper().catch(fail);
+    else if (t.dataset.nav) rvMove(+t.dataset.nav);
+    else if (t.dataset.full) showImage(t.dataset.full);
+    else if (t.dataset.open) api("/api/open", {path: t.dataset.open}).catch(fail);
+  });
+  $("#rvPane").addEventListener("change", e => {
+    if (e.target.id === "rvAdvance") R.advance = e.target.checked;
+    else if (e.target.id === "rvAdh") rvRate({adherence: e.target.value}).catch(fail);
+    else if (e.target.id === "rvFidV") rvRate({fidelity: e.target.value}).catch(fail);
+    else if (e.target.id === "rvLesson") rvRate({lesson: e.target.checked}).catch(fail);
+    else if (e.target.id === "rvNote") rvRate({note: e.target.value}).catch(fail);
+  });
+  document.addEventListener("keydown", e => {
+    if (!document.body.classList.contains("mode-review") || !R.data) return;
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
+    if ($("#viewer").style.display === "flex" && e.key !== "Escape") return;
+    const k = e.key.toLowerCase();
+    if (k === "arrowright" || k === "arrowdown") { e.preventDefault(); rvMove(1); }
+    else if (k === "arrowleft" || k === "arrowup") { e.preventDefault(); rvMove(-1); }
+    else if (/^[0-5]$/.test(k)) rvStars(+k).catch(fail);
+    else if (k === "k") rvToggleKeeper().catch(fail);
+    else if (k === "enter") { const c = R.data.cells[R.cur]; if (c) showImage(c.file); }
+    else { const d = R.defects.find(x => x.key === k); if (d) rvToggleDefect(d.id).catch(fail); }
+  });
+}
+
+(async function boot() {
+  const L = loadLocal();
+  S.mods = L.mods || {};
+  const set = (s, v) => { if (v !== undefined && v !== null) $(s).value = v; };
+  set("#runNote", L.runNote); set("#variations", L.variations); set("#temperature", L.temperature); set("#ctx", L.ctx);
+  S.wantModel = L.model || "__loaded__"; S.wantMode = L.reasoning || "";
+  set("#maxTokens", L.maxTokens); set("#seed", L.seed); set("#fmt", L.fmt); set("#groupBy", L.groupBy); set("#combined", L.combined);
+  set("#groupDir", L.groupDir); set("#tw", L.tw);
+  for (const k of ["mImage", "mFolder", "mCombined", "autoSave", "dedupe", "sidecar", "recursive", "onlyNew", "useFacts", "factsEth"]) if (L[k] !== undefined) $("#" + k).checked = L[k];
+  if (L.onExists) $$("input[name=onExists]").forEach(r => r.checked = r.value === L.onExists);
+  wire();
+  pbWire(); idWire(); rwWire(); rvWire();
+  try { await loadState(); } catch (e) { fail(e); }
+  refreshQueueLists().catch(fail);
+  loadModels().catch(e => toast("⚠ LM Studio: " + e.message, 6000));
+  if (L.path) browse(L.path).catch(() => showHome()); else showHome();
+  let mode = "generate"; try { mode = localStorage.getItem("vlmp.mode") || "generate"; } catch {}
+  setMode(mode);
+})();
+</script>
+</body>
+</html>

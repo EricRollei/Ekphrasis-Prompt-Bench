@@ -1,0 +1,12 @@
+# Optional: pose / face detectors (facts.py, Review pose check, Audit). Install these first, then:
+#   python -m pip install --no-deps rtmlib uniface hsemotion-onnx
+# (--no-deps: those three would otherwise pull the CPU onnxruntime over onnxruntime-gpu).
+# onnxruntime (CPU) works fine; swap for onnxruntime-gpu when the large download is practical.
+numpy
+opencv-python
+onnxruntime
+onnx
+scikit-image
+requests
+tqdm
+jinja2

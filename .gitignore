@@ -1,0 +1,15 @@
+.venv/
+.cache/
+runs/
+settings.json
+__pycache__/
+review.sqlite
+queues/
+staging/
+_test/
+.playwright-mcp/
+*.log
+private_docs/
+prompt_lists/
+wildcards/
+settings.json.tmp

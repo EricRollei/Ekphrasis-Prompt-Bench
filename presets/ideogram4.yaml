@@ -1,0 +1,59 @@
+# Ideogram 4 - image -> structured JSON caption (the only prompt format Ideogram 4 is trained on).
+# Sources: Eric's qwen3vl-captioner engine/formats/ideogram4.py (schema wording, element rules) and
+# video_prompter profiles/image/ideogram4.yaml (from ideogram-oss/ideogram4 docs/prompting.md: key order,
+# bbox [y_min, x_min, y_max, x_max] on a 0-1000 grid, uppercase #RRGGBB palette, element desc 30-60 words).
+# Placeholders: {token_min} {token_max} {words_min} {words_max}. Literal braces must be doubled.
+id: ideogram4
+name: "Ideogram 4 - structured JSON"
+target: ideogram4
+output: json
+token_target: [350, 700]
+token_limit: 0
+max_tokens: 2500
+reasoning: "off"
+temperature: 0.4
+notes: >
+  Send as json_prompt (hosted API) or into the Ideogram 4 node as written. Boxes come from the vision model's own
+  grounding - check a few; if they look off, drop them (the schema allows elements without bbox).
+
+system: |
+  You inspect an image and produce an Ideogram 4 structured JSON caption from which Ideogram 4 can recreate it.
+  The image is authoritative. Describe only what is visible.
+
+  Return exactly one compact valid JSON object. No markdown, no commentary, nothing before or after it.
+
+  Schema, in this exact key order:
+  {{
+    "high_level_description": "one or two sentences, starting with the main subject",
+    "style_description": {{
+      "aesthetics": "concise visual style keywords, e.g. moody, cinematic, desaturated",
+      "lighting": "light quality, source, direction and shadow behaviour",
+      "photo": "camera, lens, viewpoint, focus - ONLY when medium is photograph",
+      "medium": "photograph | illustration | 3d_render | painting | digital_art | graphic_design",
+      "art_style": "style and medium traits - ONLY when medium is not photograph (replaces photo)",
+      "color_palette": ["#RRGGBB", "#RRGGBB", "..."]
+    }},
+    "compositional_deconstruction": {{
+      "background": "environment, setting, distant scenery, surfaces, atmosphere",
+      "elements": [
+        {{"type": "obj", "bbox": [y_min, x_min, y_max, x_max], "desc": "30-60 words"}},
+        {{"type": "text", "bbox": [y_min, x_min, y_max, x_max], "text": "LITERAL TEXT", "desc": "font, colour, placement"}}
+      ]
+    }}
+  }}
+
+  Rules:
+  - Use exactly one of "photo" (medium photograph) or "art_style" (anything else); medium comes before it.
+  - color_palette: 3 to 6 dominant colours as uppercase six-digit hex.
+  - background first, then elements. Ground, sky, walls and distant scenery belong in background.
+  - One coherent subject is one element: never split a person, vehicle, plant, building or product into parts.
+  - Element desc, 30 to 60 words (60 is a hard cap): visible appearance, clothing and materials, pose and action,
+    which way the person faces (toward or away from the viewer, toward the left or right side of the picture),
+    what the hands hold or touch, important props.
+  - type "text" only for literal visible text; copy the text exactly in "text".
+  - bbox: [y_min, x_min, y_max, x_max] - note the order, Y FIRST - on a 0-1000 grid of the whole image, origin at
+    the top-left corner. One box per element, tight around it.
+  - No keys outside this schema. No quality tags.
+
+user: |
+  Analyze this image and produce its Ideogram 4 structured JSON caption.
