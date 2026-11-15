@@ -141,8 +141,10 @@ def directions_text(spec: Dict[str, Any]) -> str:
 
 
 def build_messages(preset_system: str, preset_user: str, mode: str, sources: List[Dict[str, Any]],
-                   images: List[str], assignment: Optional[Dict[str, int]], note: str = "") -> List[Dict[str, Any]]:
-    from .vision import _image_url
+                   images: List[str], assignment: Optional[Dict[str, int]], note: str = "",
+                   image_url=None) -> List[Dict[str, Any]]:
+    if image_url is None:
+        from .vision import _image_url as image_url
     system = PB_SYSTEM.format(mode_rules=DRAW_RULES if mode == "draw" else BLEND_RULES) + "\n\n" + preset_system
     total = sum(max(0.0, float(s.get("weight", 50))) for s in sources) or 1.0
     content: List[Dict[str, Any]] = []
@@ -154,13 +156,16 @@ def build_messages(preset_system: str, preset_user: str, mode: str, sources: Lis
             label += f" - weight {share}%" + ("" if take == "everything" else
                                             " - take ONLY: " + "; ".join(FACET_WORDS[f] for f in _facets_of(s)))
         content.append({"type": "text", "text": label + ":"})
-        content.append({"type": "image_url", "image_url": {"url": _image_url(img)}})
+        content.append({"type": "image_url", "image_url": {"url": image_url(img)}})
     if mode == "draw" and assignment:
         lines = [f"- {FACET_WORDS[f]}: from Picture {i + 1}" for f, i in assignment.items()]
         content.append({"type": "text", "text": "Aspect assignment for this new picture:\n" + "\n".join(lines)})
     if note:
         content.append({"type": "text", "text": "Extra direction from the artist: " + note})
-    content.append({"type": "text", "text": "Now write the prompt for the new fused picture. " + preset_user.strip()})
+    closing = preset_user.strip()
+    if "image" in closing.lower() or "picture" in closing.lower():   # "...for this image" contradicts a NEW picture
+        closing = ""
+    content.append({"type": "text", "text": ("Now write the prompt for the new fused picture. " + closing).strip()})
     return [{"role": "system", "content": system}, {"role": "user", "content": content}]
 
 
@@ -227,7 +232,8 @@ class PhotobashJob:
                     note = " ".join(x for x in (directions_text(spec), spec.get("note", "")) if x)
                     msgs = build_messages(composed.system, composed.user, mode, sources, images, assignment, note)
                     extra = 4096 if mode_r not in ("off", "") and not mode_r.startswith("i") else 0
-                    r = client.chat(api_id, msgs, max_tokens=preset.max_tokens + extra, temperature=temp,
+                    mt = int(spec.get("max_tokens") or 0) or preset.max_tokens
+                    r = client.chat(api_id, msgs, max_tokens=mt + extra, temperature=temp,
                                     top_p=preset.top_p, seed=rng.randrange(1 << 30), reasoning=mode_r, caps=caps)
                     text = (r.content or "").strip()
                     if preset.output == "json":
@@ -304,3 +310,28 @@ def save_results(settings: Dict[str, Any], results: List[Dict[str, Any]], name: 
 
 
 JOB = PhotobashJob()
+
+
+def preview(settings: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, Any]:
+    """Exactly what one mix sends to the model, with the pictures shown as placeholders (no model, no images)."""
+    from .instructions import compose, load_presets
+    preset = load_presets(config.PRESETS_DIR)[spec.get("preset") or settings["default_preset"]]
+    composed = compose(preset, [], "", 1)
+    sources = [dict(s) for s in spec.get("sources") or [] if (s.get("path") or "").strip()] or \
+        [{"path": "picture-1", "weight": 50}, {"path": "picture-2", "weight": 50}]
+    mode = spec.get("mode") if spec.get("mode") in ("blend", "draw") else "blend"
+    assignment = draw_assignment(sources, random.Random(0)) if mode == "draw" else None
+    note = " ".join(x for x in (directions_text(spec), spec.get("note", "")) if x)
+    msgs = build_messages(composed.system, composed.user, mode, sources, [s["path"] for s in sources], assignment,
+                          note, image_url=lambda p: "")
+    user = []
+    k = 0
+    for part in msgs[1]["content"]:
+        if part["type"] == "text":
+            user.append(part["text"])
+        else:
+            k += 1
+            user.append(f"[picture {k} goes here]")
+    return {"system": msgs[0]["content"], "user": "\n".join(user), "preset": preset.id,
+            "max_tokens": int(spec.get("max_tokens") or 0) or preset.max_tokens,
+            "draw_example": mode == "draw"}

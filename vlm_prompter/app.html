@@ -263,6 +263,10 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
 #pbTabs { margin:2px 0 4px; }
 
 .pbsum { font-size:12px; color:var(--accent); margin-left:6px; text-decoration:none; border-bottom:1px dotted var(--accent); }
+
+.pbbasics { padding:4px 0 2px; border-bottom:1px solid var(--line); margin-bottom:4px; }
+.pbprev { white-space:pre-wrap; font-size:11.5px; line-height:1.4; max-height:320px; overflow:auto; background:var(--soft); padding:8px; border-radius:6px; margin:0; }
+#pbPrevBox summary { cursor:pointer; font-size:12.5px; font-weight:600; margin-top:6px; }
 </style>
 </head>
 <body>
@@ -435,7 +439,15 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
       <b>Photobash</b>
       <span class="muted">several pictures → one new picture, written for the preset chosen at the top</span>
     </div>
-    <div class="idtabs" id="pbTabs"><button data-pt="src">Sources</button><button data-pt="dir">Directions</button><button data-pt="save">Save</button></div>
+    <div class="idtabs" id="pbTabs"><button data-pt="src">Sources</button><button data-pt="dir">Instructions</button><button data-pt="save">Save</button></div>
+    <div class="pbopts pbbasics">
+      <label title="blend: the model fuses all sources at once, weights say how strongly each shapes the result.&#10;draw: for each mix every aspect (subject, setting, light ...) is drawn from one source with probability = weight - many mixes give many combinations">mode
+        <select id="pbMode"><option value="blend">blend</option><option value="draw">draw</option></select></label>
+      <label>mixes <input type="number" id="pbMixes" value="4" min="1" max="200" style="width:60px"></label>
+      <label title="Higher = bolder, more varied fusions">temperature <input type="number" id="pbTemp" value="0.9" min="0" max="2" step="0.05" style="width:64px"></label>
+      <label title="Same seed + same sources = same draws and pool picks">seed <input type="text" id="pbSeed" placeholder="random" style="width:80px"></label>
+    </div>
+
     <div class="pbtab" data-pt="src">
     <div class="pbadd">
       <button id="pbAddSel" title="Add the images selected in the gallery as sources">+ selected images</button>
@@ -446,13 +458,6 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
     <div id="pbSlots"></div>
     </div>
     <div class="pbtab" data-pt="dir">
-    <div class="pbopts">
-      <label title="blend: the model fuses all sources at once, weights say how strongly each shapes the result.&#10;draw: for each mix every aspect (subject, setting, light ...) is drawn from one source with probability = weight - many mixes give many combinations">mode
-        <select id="pbMode"><option value="blend">blend</option><option value="draw">draw</option></select></label>
-      <label>mixes <input type="number" id="pbMixes" value="4" min="1" max="200" style="width:60px"></label>
-      <label title="Higher = bolder, more varied fusions">temperature <input type="number" id="pbTemp" value="0.9" min="0" max="2" step="0.05" style="width:64px"></label>
-      <label title="Same seed + same sources = same draws and pool picks">seed <input type="text" id="pbSeed" placeholder="random" style="width:80px"></label>
-    </div>
     <div class="pbopts" style="font-size:12.5px">
       <label title="The new picture gets no text, lettering, signs or captions"><input type="checkbox" id="pbNoText" checked> no text or lettering</label>
       <label title="No signatures, artist marks, watermarks, logos or overlays"><input type="checkbox" id="pbNoMarks" checked> no signatures / watermarks / logos</label>
@@ -462,13 +467,21 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
       <label>where <input type="text" id="pbTextWhere" placeholder="e.g. as a neon sign above the door" style="width:200px"></label>
     </div>
     <textarea id="pbNote" rows="2" placeholder="optional direction, e.g. make it a winter night, keep it photographic"></textarea>
+    <div class="pbopts" style="font-size:12.5px"><label title="0 = the preset's own limit">max tokens <input type="number" id="pbMaxTok" value="0" min="0" max="16000" step="100" style="width:80px"></label>
+      <span class="muted">thinking mode: the Thinking menu at the top</span></div>
+    <details id="pbPrevBox" open><summary>What the model is told <span class="muted" id="pbPrevMeta"></span></summary>
+      <div class="muted" style="font-size:11.5px;margin:4px 0">System message (photobash instructions, then the preset's format rules):</div>
+      <pre id="pbPrevSys" class="pbprev"></pre>
+      <div class="muted" style="font-size:11.5px;margin:4px 0">User message for one mix:</div>
+      <pre id="pbPrevUser" class="pbprev"></pre>
+    </details>
     </div>
     <div class="pbtab" data-pt="save" id="pbSaveTab"></div>
     <div class="pbrun">
       <button class="primary" id="pbRun">Make mixes</button>
       <button id="pbClearRes" title="Empty the results list (saved lists are not touched)">clear results</button>
       <span class="muted" id="pbState"></span>
-      <a href="#" id="pbSum" class="pbsum" title="What the next run will do - click to change it (Directions tab)"></a>
+      <a href="#" id="pbSum" class="pbsum" title="What the next run will do - click to see the Instructions tab"></a>
     </div>
     <div class="pbres" id="pbResults"></div>
     <div class="pbsave">
@@ -1881,6 +1894,19 @@ function layoutShow() {
   const p = (S.presets || []).find(x => x.id === $("#preset").value);
   $("#lyBox").style.display = p && p.layout ? "" : "none";
 }
+
+async function pbPreview() {
+  if (!document.body.classList.contains("mode-photobash")) return;
+  const tab = document.querySelector('.pbtab[data-pt="dir"]'); if (!tab || tab.style.display === "none") return;
+  const sources = PB.slots.map(s => ({path: s.path, weight: s.weight, take: s.only.length ? s.only : "everything"}));
+  const d = await api("/api/photobash/preview", {sources, mode: $("#pbMode").value, preset: $("#preset").value, note: $("#pbNote").value.trim(),
+    avoid_text: $("#pbNoText").checked, avoid_marks: $("#pbNoMarks").checked, add_text: $("#pbAddText").value.trim(),
+    text_where: $("#pbTextWhere").value.trim(), max_tokens: +$("#pbMaxTok").value || 0});
+  $("#pbPrevSys").textContent = d.system; $("#pbPrevUser").textContent = d.user;
+  $("#pbPrevMeta").textContent = `(preset ${d.preset}, max ${d.max_tokens} tokens${d.draw_example ? ", draw: one example assignment" : ""})`;
+}
+let pbPrevT = null;
+function pbPreviewSoon() { clearTimeout(pbPrevT); pbPrevT = setTimeout(() => pbPreview().catch(() => {}), 300); }
 function pbSummary() {
   const s = $("#pbSum"); if (!s) return;
   const parts = [$("#pbMode").value, `${+$("#pbMixes").value || 4} mixes`, `temp ${$("#pbTemp").value}`];
@@ -1935,7 +1961,8 @@ async function pbRun() {
   const sources = PB.slots.map(s => ({path: s.path, paths: s.files ? s.files : s.folder ? (s.folders || [s.path]) : undefined, weight: s.weight, take: s.only.length ? s.only : "everything"}));
   await api("/api/photobash/start", {layout: layoutSpec(), trigger: $("#trigger").value.trim(), sources, mode: $("#pbMode").value, mixes: +$("#pbMixes").value || 4, temperature: +$("#pbTemp").value || 0.9,
     seed: $("#pbSeed").value.trim(), note: $("#pbNote").value.trim(), preset: $("#preset").value, model: $("#model").value, reasoning: $("#mode").value,
-    avoid_text: $("#pbNoText").checked, avoid_marks: $("#pbNoMarks").checked, add_text: $("#pbAddText").value.trim(), text_where: $("#pbTextWhere").value.trim()});
+    avoid_text: $("#pbNoText").checked, avoid_marks: $("#pbNoMarks").checked, add_text: $("#pbAddText").value.trim(), text_where: $("#pbTextWhere").value.trim(),
+    max_tokens: +$("#pbMaxTok").value || 0});
   PB.since = 0; pbPoll();                                 // results accumulate; "clear results" empties
 }
 async function pbPoll() {
@@ -1990,7 +2017,10 @@ function pbWire() {
       if (k >= 0) s.only.splice(k, 1); else s.only.push(f.dataset.f); pbRenderSlots(); pbSave(); }
   };
   ["#pbMode", "#pbMixes", "#pbTemp", "#pbNote", "#pbNoText", "#pbNoMarks", "#pbAddText", "#pbTextWhere", "#pbSeed"].forEach(s => {
-    $(s).addEventListener("change", () => { pbSave(); pbSummary(); }); $(s).addEventListener("input", pbSummary); });
+    $(s).addEventListener("change", () => { pbSave(); pbSummary(); pbPreviewSoon(); }); $(s).addEventListener("input", () => { pbSummary(); pbPreviewSoon(); }); });
+  $("#pbMaxTok").addEventListener("input", pbPreviewSoon); $("#preset").addEventListener("change", pbPreviewSoon);
+  $("#pbTabs").addEventListener("click", () => setTimeout(pbPreviewSoon, 50));
+  $("#pbSlots").addEventListener("click", () => setTimeout(pbPreviewSoon, 50)); $("#pbSlots").addEventListener("change", pbPreviewSoon);
   pbSummary();
   $("#pbSum").onclick = e => { e.preventDefault(); document.querySelector('#pbTabs [data-pt="dir"]').click(); };
   api("/api/photobash/status?since=0").then(s => { if (s.running) { PB.since = 0; pbPoll(); } }).catch(() => {});

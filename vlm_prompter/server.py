@@ -276,7 +276,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/api/audit/verdict": self.audit_verdict,
                 "/api/compare/start": self.compare_start, "/api/compare/stop": self.compare_stop,
                 "/api/photobash/start": self.pb_start, "/api/photobash/stop": self.pb_stop,
-                "/api/photobash/save": self.pb_save,
+                "/api/photobash/save": self.pb_save, "/api/photobash/preview": self.pb_preview,
                 "/api/ideas/start": self.id_start, "/api/ideas/stop": self.id_stop, "/api/ideas/save": self.id_save,
                 "/api/rewrite/start": self.rw_start, "/api/rewrite/stop": self.rw_stop, "/api/rewrite/save": self.rw_save,
                 "/api/rewrite/load": self.rw_load, "/api/rewrite/split": self.rw_split,
@@ -790,6 +790,10 @@ class Handler(BaseHTTPRequestHandler):
                 or compare.JOB.status().get("running")):
             return self._error("LM Studio is busy with another run - wait for it first")
         self._json(photobash.JOB.start(config.load_settings(), body))
+
+    def pb_preview(self, body):
+        from . import photobash
+        self._json(photobash.preview(config.load_settings(), body))
 
     def pb_status(self, q):
         from . import photobash
