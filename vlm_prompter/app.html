@@ -253,6 +253,10 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
 @keyframes rpulse { 0%, 100% { opacity:1; } 50% { opacity:.65; } }
 .pbmini { width:110px; height:110px; display:grid; grid-template-columns:1fr 1fr; gap:2px; }
 .pbmini img { width:54px !important; height:54px !important; object-fit:cover; border-radius:3px; }
+
+/* Nov 15: the save / render row stays visible at the bottom of Photobash, Ideas and Rewrite; results scroll under it */
+.pbsave { position:sticky; bottom:0; z-index:6; background:var(--bg); padding:8px 0 6px; border-top:1px solid var(--line); margin-top:auto; }
+.pbrun { position:sticky; top:0; z-index:6; background:var(--bg); padding:4px 0; }
 </style>
 </head>
 <body>
