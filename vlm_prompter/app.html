@@ -257,6 +257,10 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
 /* Nov 15: the save / render row stays visible at the bottom of Photobash, Ideas and Rewrite; results scroll under it */
 .pbsave { position:sticky; bottom:0; z-index:6; background:var(--bg); padding:8px 0 6px; border-top:1px solid var(--line); margin-top:auto; }
 .pbrun { position:sticky; top:0; z-index:6; background:var(--bg); padding:4px 0; }
+
+.lsblock { display:flex; flex-direction:column; gap:2px; font-size:12.5px; }
+.lshint { flex:1; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#pbTabs { margin:2px 0 4px; }
 </style>
 </head>
 <body>
@@ -370,6 +374,7 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
           <select id="rwWords"><option value="faithful">faithful</option><option value="fresh" selected>fresh</option><option value="bold">bold</option></select></label>
         <label title="Words and names that must survive exactly (LoRA triggers, names), comma separated">keep exactly <input type="text" id="rwKeep" placeholder="trigger words, names" style="width:220px"></label>
       </div>
+      <div id="rwSaveBox"></div>
       <div class="pbrun"><button class="primary" id="rwRun">Rewrite</button><button id="rwClearRes" title="Empty the results list">clear results</button><span class="muted" id="rwState"></span></div>
     </div>
     <div class="idcol">
@@ -379,7 +384,7 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
       </div>
       <div class="pbres" id="rwResults"></div>
       <div class="pbsave">
-        <input type="text" id="rwName" placeholder="rewrite_<date> (in the prompt lists folder)" style="flex:1">
+        <span class="muted lshint" id="rwHint"></span>
         <button data-rall="rw" title="Render every ticked rewrite with the render preset">&#9654; render ticked</button>
         <button id="rwSaveKept">Save ticked</button><button id="rwSaveAll">Save all</button>
       </div>
@@ -411,12 +416,13 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
         <label title="Higher = more varied, stranger ideas">temperature <input type="number" id="idTemp" value="1.0" min="0" max="2" step="0.05" style="width:64px"></label>
         <label title="Same seed = same rolls / wildcard picks">seed <input type="text" id="idSeed" placeholder="random" style="width:80px"></label>
       </div>
+      <div id="idSaveBox"></div>
       <div class="pbrun"><button class="primary" id="idRun">Make ideas</button><button id="idClearRes" title="Empty the results list">clear results</button><span class="muted" id="idState"></span></div>
     </div>
     <div class="idcol">
       <div class="pbres" id="idResults"></div>
       <div class="pbsave">
-        <input type="text" id="idName" placeholder="ideas_<date> (in the prompt lists folder)" style="flex:1">
+        <span class="muted lshint" id="idHint"></span>
         <button data-rall="id" title="Render every ticked idea with the render preset">&#9654; render ticked</button><button id="idToRw" title="Send the ticked ideas to the Rewrite tab">→ Rewrite</button>
         <button id="idSaveKept">Save ticked</button><button id="idSaveAll">Save all</button>
       </div>
@@ -427,6 +433,8 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
       <b>Photobash</b>
       <span class="muted">several pictures → one new picture, written for the preset chosen at the top</span>
     </div>
+    <div class="idtabs" id="pbTabs"><button data-pt="src">Sources</button><button data-pt="dir">Directions</button><button data-pt="save">Save</button></div>
+    <div class="pbtab" data-pt="src">
     <div class="pbadd">
       <button id="pbAddSel" title="Add the images selected in the gallery as sources">+ selected images</button>
       <button id="pbAddFolder" title="Add the folder open in the gallery as a POOL: each mix draws a random image from it">+ this folder as pool</button>
@@ -434,6 +442,8 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
       <button id="pbClear">clear sources</button>
     </div>
     <div id="pbSlots"></div>
+    </div>
+    <div class="pbtab" data-pt="dir">
     <div class="pbopts">
       <label title="blend: the model fuses all sources at once, weights say how strongly each shapes the result.&#10;draw: for each mix every aspect (subject, setting, light ...) is drawn from one source with probability = weight - many mixes give many combinations">mode
         <select id="pbMode"><option value="blend">blend</option><option value="draw">draw</option></select></label>
@@ -450,6 +460,8 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
       <label>where <input type="text" id="pbTextWhere" placeholder="e.g. as a neon sign above the door" style="width:200px"></label>
     </div>
     <textarea id="pbNote" rows="2" placeholder="optional direction, e.g. make it a winter night, keep it photographic"></textarea>
+    </div>
+    <div class="pbtab" data-pt="save" id="pbSaveTab"></div>
     <div class="pbrun">
       <button class="primary" id="pbRun">Make mixes</button>
       <button id="pbClearRes" title="Empty the results list (saved lists are not touched)">clear results</button>
@@ -457,7 +469,7 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
     </div>
     <div class="pbres" id="pbResults"></div>
     <div class="pbsave">
-      <input type="text" id="pbName" placeholder="photobash_<date> (in the prompt lists folder)" style="flex:1">
+      <span class="muted lshint" id="pbHint"></span>
       <button data-rall="pb" title="Render every ticked mix with the render preset">&#9654; render ticked</button><button id="pbToRw" title="Send the ticked mixes to the Rewrite tab">→ Rewrite</button>
       <button id="pbSaveKept" title="Save the ticked mixes as one prompt list (one per line) with a .meta.jsonl">Save ticked</button>
       <button id="pbSaveAll">Save all</button>
@@ -1470,6 +1482,66 @@ async function rvRefreshChecks() {
   const by = new Map(d.cells.map(c => [c.file, c.check]));
   R.data.cells.forEach((c, i) => { const n = by.get(c.file); if (JSON.stringify(n) !== JSON.stringify(c.check)) { c.check = n; rvUpdateCard(i); if (i === R.cur) rvRenderDetail(); } });
 }
+// ---------------------------------------------------------------- shared list settings (Generate's Save tab is the source)
+function lsOpts() { return {fmt: $("#fmt").value, on_exists: (document.querySelector("input[name=onExists]:checked") || {}).value || "append",
+  dedupe: $("#dedupe").checked, sidecar: $("#sidecar").checked}; }
+function lsBlock(m, stem) { return `<div class="lsblock" data-ls="${m}" data-stem="${stem}">
+  <label class="setrow"><span>list name</span><input type="text" id="${m}Name" placeholder="${stem}_<date> (in the prompt lists folder)"></label>
+  <label class="setrow"><span>format</span><select class="ls-fmt"><option value="lines">one prompt per line</option><option value="blocks">blocks (a header line, then the prompt)</option><option value="jsonl">JSON lines (.jsonl) with sources and model</option></select></label>
+  <div class="setrow"><span>if the list exists</span><span><label><input type="radio" name="${m}Ex" value="append"> add to it</label> &nbsp; <label><input type="radio" name="${m}Ex" value="new"> make a new numbered file</label></span></div>
+  <div class="setrow"><span></span><span><label><input type="checkbox" class="ls-dd"> skip prompts already in the list</label> &nbsp; <label><input type="checkbox" class="ls-sc"> .meta.jsonl sidecar (sources, model, version)</label></span></div>
+  <div class="muted" style="font-size:11.5px">These list settings are shared by every mode (also Generate's combined list).</div></div>`; }
+function lsSync() {
+  const o = lsOpts();
+  document.querySelectorAll(".lsblock").forEach(b => { b.querySelector(".ls-fmt").value = o.fmt;
+    b.querySelectorAll("input[type=radio]").forEach(r => r.checked = r.value === o.on_exists);
+    b.querySelector(".ls-dd").checked = o.dedupe; b.querySelector(".ls-sc").checked = o.sidecar; });
+  lsPeekAll();
+}
+function lsSet(o) {
+  if (o.fmt) $("#fmt").value = o.fmt;
+  if (o.on_exists) document.querySelectorAll("input[name=onExists]").forEach(r => r.checked = r.value === o.on_exists);
+  if (o.dedupe !== undefined) $("#dedupe").checked = o.dedupe;
+  if (o.sidecar !== undefined) $("#sidecar").checked = o.sidecar;
+  ["#fmt", "#dedupe", "#sidecar"].forEach(s => $(s).dispatchEvent(new Event("change")));
+  saveLocal(); lsSync();
+}
+async function lsPeek(m) {
+  const b = document.querySelector(`.lsblock[data-ls="${m}"]`); if (!b) return;
+  const o = lsOpts(), name = $(`#${m}Name`).value.trim();
+  const d = await api(`/api/lists/peek?name=${encodeURIComponent(name)}&stem=${b.dataset.stem}&fmt=${o.fmt}`);
+  const txt = !d.exists ? `saves to ${d.file} (new file)` : o.on_exists === "append" ? `adds to ${d.file} (${d.entries} prompts in it)` : `${d.file} exists - a new numbered file is made`;
+  const h = $(`#${m}Hint`); if (h) { h.textContent = "→ " + txt; h.title = d.path; }
+}
+function lsPeekAll() { ["pb", "id", "rw"].forEach(m => lsPeek(m).catch(() => {})); }
+function lsSaveDone(d, n) {
+  toast(d.added ? `${d.action === "appended" ? "added" : "saved"} ${d.added} prompt(s) ${d.action === "appended" ? "to" : "as"} ${d.file}${d.skipped ? ` - ${d.skipped} skipped (already in the list)` : ""}`
+    : `nothing new - all ${d.skipped} already in ${d.file}`, 7000);
+  lsPeekAll();
+}
+function lsWire() {
+  $("#pbSaveTab").innerHTML = lsBlock("pb", "photobash");
+  $("#idSaveBox").innerHTML = '<h4 style="margin:8px 0 2px">Save list</h4>' + lsBlock("id", "ideas");
+  $("#rwSaveBox").innerHTML = '<h4 style="margin:8px 0 2px">Save list</h4>' + lsBlock("rw", "rewrite");
+  document.addEventListener("change", e => {
+    const b = e.target.closest(".lsblock"); if (!b) return;
+    if (e.target.classList.contains("ls-fmt")) lsSet({fmt: e.target.value});
+    else if (e.target.type === "radio") lsSet({on_exists: e.target.value});
+    else if (e.target.classList.contains("ls-dd")) lsSet({dedupe: e.target.checked});
+    else if (e.target.classList.contains("ls-sc")) lsSet({sidecar: e.target.checked});
+  });
+  document.addEventListener("input", e => { if (/^(pb|id|rw)Name$/.test(e.target.id)) { clearTimeout(lsWire.t); lsWire.t = setTimeout(lsPeekAll, 400); } });
+  ["#fmt", "#dedupe", "#sidecar"].forEach(s => $(s).addEventListener("change", () => lsSync()));
+  document.querySelectorAll("input[name=onExists]").forEach(r => r.addEventListener("change", () => lsSync()));
+  // Photobash tabs
+  const showTab = t => { document.querySelectorAll("#pbTabs button").forEach(b => b.classList.toggle("on", b.dataset.pt === t));
+    document.querySelectorAll(".pbtab").forEach(d => d.style.display = d.dataset.pt === t ? "" : "none");
+    try { localStorage.setItem("vlmp.pbtab", t); } catch {} };
+  $("#pbTabs").onclick = e => { const b = e.target.closest("[data-pt]"); if (b) showTab(b.dataset.pt); };
+  let t0 = "src"; try { t0 = localStorage.getItem("vlmp.pbtab") || "src"; } catch {}
+  showTab(t0);
+  setTimeout(lsSync, 900);
+}
 // ---------------------------------------------------------------- Render (ComfyUI) + Settings page
 const RN = {presets: [], workflows: [], strips: {}, polling: false, since: 0, active: new Set()};
 const rbar = () => `<div class="rbar"><button class="rbtn" title="Render this prompt with the render preset chosen at the top (ComfyUI)">&#9654; render</button><span class="rstrip"></span></div>`;
@@ -1687,8 +1759,9 @@ async function rwPoll() {
 async function rwSaveList(all) {
   const rows = RW.results.filter(r => all || r.keep);
   if (!rows.length) return toast("nothing to save");
-  const d = await api("/api/rewrite/save", {results: rows, name: $("#rwName").value.trim()});
-  toast("saved " + rows.length + " prompts to " + d.path, 8000);
+  const d = await api("/api/rewrite/save", {results: rows, name: $("#rwName").value.trim(), ...lsOpts()});
+  if (d.added === undefined) { toast("saved " + rows.length + " pairs: " + d.path, 8000); return; }   // pair lists (_A / _B)
+  lsSaveDone(d);
 }
 function rwWire() {
   rwLoadLocal(); rwRenderOp();
@@ -1727,7 +1800,7 @@ function idLoad() {
   if (!ID.on) ID.on = [...ID.dice];
 }
 function idRenderMode() {
-  $$(".idtabs button").forEach(b => b.classList.toggle("on", b.dataset.idm === ID.mode));
+  $$("#idPane .idtabs button").forEach(b => b.classList.toggle("on", b.dataset.idm === ID.mode));
   $("#idDiceBox").style.display = ID.mode === "dice" ? "" : "none";
   $("#idWcBox").style.display = ID.mode === "wildcards" ? "" : "none";
   $("#idBrief").style.display = ID.mode === "wildcards" ? "none" : "";
@@ -1767,8 +1840,7 @@ async function idPoll() {
 async function idSaveList(all) {
   const rows = ID.results.filter(r => all || r.keep);
   if (!rows.length) return toast("nothing to save");
-  const d = await api("/api/ideas/save", {results: rows, name: $("#idName").value.trim()});
-  toast("saved " + rows.length + " prompts to " + d.path, 8000);
+  lsSaveDone(await api("/api/ideas/save", {results: rows, name: $("#idName").value.trim(), ...lsOpts()}));
 }
 function idWire() {
   idLoad(); idRenderMode();
@@ -1865,8 +1937,7 @@ async function pbPoll() {
 async function pbSaveList(all) {
   const rows = PB.results.filter(r => all || r.keep);
   if (!rows.length) return toast("nothing to save");
-  const d = await api("/api/photobash/save", {results: rows, name: $("#pbName").value.trim()});
-  toast("saved " + rows.length + " prompts to " + d.path, 8000);
+  lsSaveDone(await api("/api/photobash/save", {results: rows, name: $("#pbName").value.trim(), ...lsOpts()}));
 }
 function pbWire() {
   $("#preset").addEventListener("change", layoutShow); setTimeout(layoutShow, 800);
@@ -1977,7 +2048,7 @@ function rvWire() {
   for (const k of ["mImage", "mCaption", "mFolder", "mCombined", "autoSave", "dedupe", "sidecar", "recursive", "onlyNew", "useFacts", "factsEth"]) if (L[k] !== undefined) $("#" + k).checked = L[k];
   if (L.onExists) $$("input[name=onExists]").forEach(r => r.checked = r.value === L.onExists);
   wire();
-  pbWire(); idWire(); rwWire(); rnWire(); rvWire();
+  lsWire(); pbWire(); idWire(); rwWire(); rnWire(); rvWire();
   try { await loadState(); } catch (e) { fail(e); }
   refreshQueueLists().catch(fail);
   loadModels().catch(e => toast("⚠ LM Studio: " + e.message, 6000));

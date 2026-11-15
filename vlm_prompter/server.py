@@ -65,6 +65,12 @@ SETTINGS_LOCK = threading.Lock()
 
 
 # ----------------------------------------------------------------------------------------------------- job holder
+
+def _list_opts(body):
+    """Shared list settings sent by the GUI (Generate's Save tab values)."""
+    return {"fmt": body.get("fmt", "lines"), "on_exists": body.get("on_exists", "append"),
+            "dedupe": bool(body.get("dedupe", True)), "sidecar": bool(body.get("sidecar", True))}
+
 class JobHolder:
     """One generation job at a time; events kept so the page can poll with ?since=N."""
 
@@ -234,6 +240,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/api/compare/status": self.compare_status, "/api/photobash/status": self.pb_status,
                 "/api/ideas/status": self.id_status, "/api/ideas/wildcards": self.id_wildcards,
                 "/api/rewrite/status": self.rw_status, "/api/settings/all": self.settings_all,
+                "/api/lists/peek": self.lists_peek,
                 "/api/render/state": self.r_state, "/api/render/status": self.r_status,
                 "/api/render/fields": self.r_fields, "/api/render/for": self.r_for, "/api/models": self.models, "/api/drives": self.drives,
                 "/api/ls": self.ls, "/thumb": self.thumb, "/api/queue": self.queue_get, "/api/queues": self.queues,
@@ -633,6 +640,10 @@ class Handler(BaseHTTPRequestHandler):
         self._json(report.build(q.get("kind", "sweep"), q.get("path", "")))
 
     # --- Settings page + Render (ComfyUI) ---------------------------------------------------------------------
+    def lists_peek(self, q):
+        from . import lists
+        self._json(lists.peek(config.load_settings(), q.get("name", ""), q.get("stem", "list"), q.get("fmt", "lines")))
+
     def settings_all(self, q):
         s = config.load_settings()
         keys = ("group_dir", "wildcards_dir", "sweeps_dir", "lmstudio_models_dir", "load_context_length", "comfyui_url",
@@ -723,7 +734,9 @@ class Handler(BaseHTTPRequestHandler):
         rows = body.get("results") or []
         if rows and all(r.get("op") == "pair" for r in rows):
             return self._json({"path": rewrite.save_pairs(config.load_settings(), rows, body.get("name", ""))})
-        self._json({"path": rewrite.save_results(config.load_settings(), rows, body.get("name", ""))})
+        from . import lists
+        self._json(lists.save_list(config.load_settings(), lists.rewrite_entries(rows), body.get("name", ""), "rewrite",
+                                   **_list_opts(body)))
 
     def rw_load(self, body):
         from . import rewrite
@@ -757,7 +770,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def id_save(self, body):
         from . import ideas
-        self._json({"path": ideas.save_results(config.load_settings(), body.get("results") or [], body.get("name", ""))})
+        from . import lists
+        self._json(lists.save_list(config.load_settings(), lists.ideas_entries(body.get("results") or []),
+                                   body.get("name", ""), "ideas", **_list_opts(body)))
 
     def id_wildcards(self, q):
         from . import ideas
@@ -787,8 +802,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def pb_save(self, body):
         from . import photobash
-        self._json({"path": photobash.save_results(config.load_settings(), body.get("results") or [],
-                                                    body.get("name", ""))})
+        from . import lists
+        self._json(lists.save_list(config.load_settings(), lists.photobash_entries(body.get("results") or []),
+                                   body.get("name", ""), "photobash", **_list_opts(body)))
 
     # --- Compare runs: several prompt versions per image ------------------------------------------------
     def compare_start(self, body):
