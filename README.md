@@ -22,7 +22,7 @@ Krea 2 straight from the app.*
 
 ## Highlights
 
-- **Five modes in one app** - Generate, Photobash, Ideas, Rewrite and Review.
+- **Five modes in one app** - Describe, Photobash, Ideas, Rewrite and Review.
 - **Model-aware presets** - every prompt is written in the target model's format, order and length (Krea 2's 512-token
   encoder, MOSS-Image's long-form prose, Ideogram 4's structured JSON, Wan 2.2's motion-first video prompts ...).
 - **Photobashing in text** - mix 2-4 images (or random picks from whole folders) by weight into one coherent new
@@ -111,7 +111,7 @@ presets). The render keys are `comfyui_url`, `render_gpu` (`shared` or `separate
 
 ## The modes
 
-### Generate - images to prompts
+### Describe - images to prompts
 
 <!-- screenshot to come: assets/generate.png -->
 
@@ -203,7 +203,7 @@ and from pool picks.
 #### Instructions tab
 
 - **no text or lettering**, **no signatures / watermarks / logos**, and **add text** (exact text, plus where it goes).
-- **Modifier chips** shared with Generate - change style, setting, era, lighting or palette, replace the subject,
+- **Modifier chips** shared with Describe - change style, setting, era, lighting or palette, replace the subject,
   **Medium** (e.g. "35mm film photograph", whatever the sources are) or **Omit medium words** (no medium, camera or
   brush terms in the prompt), extra detail, free instruction.
 - A free **note**, a **max tokens** override, and **what the model is told** - a live preview of the exact
@@ -211,7 +211,7 @@ and from pool picks.
 
 #### Save tab
 
-The shared list settings (also used by Ideas, Rewrite and Generate's combined list): list name, format (one prompt per
+The shared list settings (also used by Ideas, Rewrite and Describe's combined list): list name, format (one prompt per
 line, blocks, or JSON lines with sources and model), add to an existing list or make a new numbered file, skip
 prompts already in the list, and a `.meta.jsonl` sidecar recording the sources, weights and draw of every prompt. The
 row at the bottom shows where the next save goes.

@@ -300,12 +300,18 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
 .wcfill button { align-self:flex-start; font-size:11.5px; padding:1px 8px; }
 
 #idTemplate { min-height:4.6em; } #idBrief { min-height:3.2em; }
+
+/* Nov 15: the area where you set up the job is tinted (as Describe's run band); results stay neutral */
+.setupband { background:var(--accent-soft); border:1px solid var(--line); border-bottom:2px solid var(--divider);
+             border-radius:8px; padding:8px 10px 10px; display:flex; flex-direction:column; gap:8px; }
+.idsec.setupband { padding:10px 12px 12px; margin:4px 0; }
+.setupbar { background:var(--accent-soft) !important; border-bottom:2px solid var(--divider); }
 </style>
 </head>
 <body>
 <header>
   <h1>Ekphrasis Prompt Bench</h1>
-  <div class="modes"><button data-mode="generate" class="on">Generate</button><button data-mode="photobash">Photobash</button><button data-mode="ideas">Ideas</button><button data-mode="rewrite">Rewrite</button><button data-mode="review">Review</button></div>
+  <div class="modes"><button data-mode="generate" class="on" title="Describe your images: each image becomes a prompt for the preset chosen at the top">Describe</button><button data-mode="photobash">Photobash</button><button data-mode="ideas">Ideas</button><button data-mode="rewrite">Rewrite</button><button data-mode="review">Review</button></div>
   <select id="model" title="Which LM Studio model writes the prompts (● = loaded now)"></select>
   <button id="fav" title="Mark this model as a favourite">☆</button>
   <button id="refreshModels" title="Re-read the model list and what LM Studio has loaded">⟳</button>
@@ -334,7 +340,7 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
     <div id="rvSrcList"></div>
   </section>
   <section id="rvGrid" class="rv">
-    <div class="tools">
+    <div class="setupbar tools">
       <span id="rvInfo" class="muted">pick a sweep or folder on the left</span>
       <label class="muted"><input type="checkbox" id="rvUnrated"> unrated</label>
       <label class="muted"><input type="checkbox" id="rvFlagged"> with defects</label>
@@ -387,6 +393,7 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
   <section id="rwPane">
     <div class="idcol">
       <div class="pbhead"><b>Rewrite</b> <span class="muted">rewrites come out in the format and length of the preset chosen at the top</span></div>
+      <div class="setupband">
       <div style="display:flex;gap:6px">
         <input type="text" id="rwPath" placeholder="prompt list file (.txt one per line, or .jsonl)" style="flex:1">
         <button id="rwLoad">Load</button>
@@ -413,6 +420,7 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
           <select id="rwWords"><option value="faithful">faithful</option><option value="fresh" selected>fresh</option><option value="bold">bold</option></select></label>
         <label title="Words and names that must survive exactly (LoRA triggers, names), comma separated">keep exactly <input type="text" id="rwKeep" placeholder="trigger words, names" style="width:220px"></label>
       </div>
+      </div>
       <div id="rwSaveBox"></div>
       <div class="pbrun"><button class="primary" id="rwRun">Rewrite</button><button id="rwClearRes" title="Empty the results list">clear results</button><span class="muted" id="rwState"></span></div>
     </div>
@@ -435,7 +443,7 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
         <p>Make prompt lists <b>without source images</b>. Every idea is written by the model loaded in LM Studio, in the
         format of the <b>Preset</b> chosen at the top (Krea 2, MOSS, Ideogram ...) and with the trigger word if one is set.
         Choose how the ideas are made:</p></div>
-      <section class="idsec">
+      <section class="idsec setupband">
         <h3>1 &middot; What to make</h3>
         <div class="idtabs">
           <button data-idm="brief">brief</button>
@@ -508,6 +516,7 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
       <b>Photobash</b>
       <span class="muted">several pictures → one new picture, written for the preset chosen at the top</span>
     </div>
+    <div class="setupband">
     <div class="idtabs" id="pbTabs"><button data-pt="src">Sources</button><button data-pt="dir">Instructions</button><button data-pt="save">Save</button></div>
     <div class="pbopts pbbasics">
       <label title="blend: the model fuses all sources at once, weights say how strongly each shapes the result.&#10;draw: for each mix every aspect (subject, setting, light ...) is drawn from one source with probability = weight - many mixes give many combinations">mode
@@ -535,7 +544,7 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
       <label>add text <input type="text" id="pbAddText" placeholder="exact text to show in the picture (optional)" style="width:240px"></label>
       <label>where <input type="text" id="pbTextWhere" placeholder="e.g. as a neon sign above the door" style="width:200px"></label>
     </div>
-    <div class="muted" style="font-size:12px;margin-top:4px">modifiers (same as Generate) - click to use, fill in the value where asked:</div>
+    <div class="muted" style="font-size:12px;margin-top:4px">modifiers (same as Describe) - click to use, fill in the value where asked:</div>
     <div class="pbfac" id="pbMods"></div>
     <div id="pbModVals"></div>
     <textarea id="pbNote" rows="2" placeholder="free direction, e.g. make it a winter night, keep it photographic"></textarea>
@@ -549,6 +558,7 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
     </details>
     </div>
     <div class="pbtab" data-pt="save" id="pbSaveTab"></div>
+    </div>
     <div class="pbrun">
       <button class="primary" id="pbRun">Make mixes</button>
       <button id="pbClearRes" title="Empty the results list (saved lists are not touched)">clear results</button>
@@ -1578,7 +1588,7 @@ function lsBlock(m, stem) { return `<div class="lsblock" data-ls="${m}" data-ste
   <label class="setrow"><span>format</span><select class="ls-fmt"><option value="lines">one prompt per line</option><option value="blocks">blocks (a header line, then the prompt)</option><option value="jsonl">JSON lines (.jsonl) with sources and model</option></select></label>
   <div class="setrow"><span>if the list exists</span><span><label><input type="radio" name="${m}Ex" value="append"> add to it</label> &nbsp; <label><input type="radio" name="${m}Ex" value="new"> make a new numbered file</label></span></div>
   <div class="setrow"><span></span><span><label><input type="checkbox" class="ls-dd"> skip prompts already in the list</label> &nbsp; <label><input type="checkbox" class="ls-sc"> .meta.jsonl sidecar (sources, model, version)</label></span></div>
-  <div class="muted" style="font-size:11.5px">These list settings are shared by every mode (also Generate's combined list).</div></div>`; }
+  <div class="muted" style="font-size:11.5px">These list settings are shared by every mode (also Describe's combined list).</div></div>`; }
 function lsSync() {
   const o = lsOpts();
   document.querySelectorAll(".lsblock").forEach(b => { b.querySelector(".ls-fmt").value = o.fmt;
