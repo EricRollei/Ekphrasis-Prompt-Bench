@@ -127,18 +127,86 @@ overwritten. Prompts cut off at the token limit are retried automatically with a
 <!-- SCREENSHOT: assets/photobash.png - three sources (one a folder pool), weights, aspect chips and results -->
 ![Photobash](assets/photobash.png)
 
-Add 2-4 **sources** - images, or **folders as random pools** (a pool can hold several folders; each folder gets an
-equal chance). Give each a **weight**. By default a source contributes **everything**; tick aspects (subject, pose,
-clothing, setting, light, palette, style, genre, era, mood, composition, texture) to use **only** those from it.
+Add 2-4 **sources**: single images, a **folder as a pool** (a random image per mix; a pool can hold several folders,
+each with an equal chance), or **a selection as one pool** (pick a hand-chosen subset of a folder in the gallery -
+no new folder needed). Give each source a **weight**. The panel has three tabs - **Sources**, **Instructions**,
+**Save** - and the basics (mode, number of mixes, temperature, seed) stay visible on all of them.
 
-- **blend** - the model fuses all sources at once; the heaviest is the backbone, lighter ones transform it.
-- **draw** - for each mix every aspect is drawn from one source with probability = weight. Many mixes, many
-  combinations.
+The result is always **one coherent picture** - never a collage or a double exposure. Where sources conflict, the
+model resolves the conflict into a new idea instead of averaging it away.
 
-The result is always **one coherent scene** - never a collage or double exposure; conflicts between sources are
-resolved into a new idea rather than averaged. Master directions: **no text or lettering**, **no signatures /
-watermarks / logos**, and **add text** (exact text and where it goes). Results build up until you clear them, and are
-written in the chosen preset's format.
+#### Aspects
+
+A picture is described through twelve **aspects**: subject, pose, clothing, setting, light, palette, style, genre,
+era, mood, composition and texture.
+
+- By default every source **offers all twelve**.
+- Tick aspects on a source and it offers **only those** ("use only its style and palette").
+- An aspect that **no source offers is invented by the model**. To build the new picture only from your sources,
+  either tick nothing anywhere, or make sure **every aspect is ticked on at least one source**. Leaving aspects
+  unticked everywhere is also a tool: the model fills them in freshly on every mix.
+
+#### Blend and draw
+
+- **blend** - sources that offer the same aspect are **mixed by weight**. The heaviest source is the backbone; lighter
+  ones transform it. At equal weights the model makes a true hybrid.
+- **draw** - as in drawing a card: for every mix, each aspect is **drawn from one of the sources that offer it**, with
+  the weights as the odds. The draw is shown on each result (`subject:2 light:3 ...`), so a good mix tells you which
+  aspect came from where.
+
+The two modes only differ where **aspects overlap** (two or more sources offer the same aspect):
+
+| | blend | draw |
+|---|---|---|
+| an aspect offered by several sources | their versions are mixed, by weight | one of them is chosen per mix, by weight |
+| an aspect offered by one source | taken from it | taken from it - every mix, no randomness |
+| an aspect offered by no source | invented by the model | invented by the model |
+| what the weight means | share of influence | odds of being drawn |
+| typical number of mixes | 2-6 | 12-36+ |
+
+So with **nothing ticked**, draw deals all twelve aspects among the sources independently on every mix - the
+strongest "mix them up" setting. If every aspect is ticked on **exactly one** source, there is nothing to draw:
+both modes take the same aspects from the same sources every time, and variety comes only from the model's sampling
+and from pool picks.
+
+**Example - subject ticked on all three sources, nothing else:**
+- **blend**: the three subjects are fused into one new hybrid subject; setting, light, style and the rest are
+  invented. (To show them together as separate figures instead, say so in the note.)
+- **draw**: each mix takes the subject of **one** source - the others take turns on later mixes - and places it in an
+  invented scene.
+
+#### A way to work
+
+1. **Explore** with draw, nothing ticked, folder or selection pools, 24-36 mixes.
+2. **Render** the promising ones (render ticked) and read their aspect draws.
+3. **Refine** with blend: the winning sources, with "use only" ticks on what each should give, a few mixes.
+4. **Redo** any single mix that came close - same pictures and same draw, new seed. Runaway text (a model stuck in a
+   repetition loop) is caught automatically: one silent retry, then a flag on the card.
+
+#### Instructions tab
+
+- **no text or lettering**, **no signatures / watermarks / logos**, and **add text** (exact text, plus where it goes).
+- **Modifier chips** shared with Generate - change style, setting, era, lighting or palette, replace the subject,
+  **Medium** (e.g. "35mm film photograph", whatever the sources are) or **Omit medium words** (no medium, camera or
+  brush terms in the prompt), extra detail, free instruction.
+- A free **note**, a **max tokens** override, and **what the model is told** - a live preview of the exact
+  instructions and picture labels for one mix.
+
+#### Save tab
+
+The shared list settings (also used by Ideas, Rewrite and Generate's combined list): list name, format (one prompt per
+line, blocks, or JSON lines with sources and model), add to an existing list or make a new numbered file, skip
+prompts already in the list, and a `.meta.jsonl` sidecar recording the sources, weights and draw of every prompt. The
+row at the bottom shows where the next save goes.
+
+#### How it works
+
+Each mix is **one call to the vision model**. The app first decides the random parts in code (which image each pool
+contributes, and in draw mode which source each aspect comes from), then sends all the source images together in one
+message - each labelled with its weight and "use only" aspects, or with the list of drawn aspects - along with the
+photobash instructions and the preset's format rules. The model sees the pictures directly and writes the new prompt
+in one pass; there is no captioning step and no mixing of image embeddings. Each source image costs part of the
+model's context, so two or three sources are cheaper and often more coherent than four.
 
 ### Ideas - prompts without images
 
