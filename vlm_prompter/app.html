@@ -298,6 +298,8 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
 .wcroll { display:flex; gap:8px; align-items:center; font-size:12.5px; }
 .wcfill { border:1px solid var(--line); border-radius:8px; padding:6px 8px; margin:4px 0; font-size:13px; display:flex; flex-direction:column; gap:3px; }
 .wcfill button { align-self:flex-start; font-size:11.5px; padding:1px 8px; }
+
+#idTemplate { min-height:4.6em; } #idBrief { min-height:3.2em; }
 </style>
 </head>
 <body>
@@ -1900,7 +1902,10 @@ const ID_HELP = {
     lists and NSFW level applied.`,
 };
 const WC = {rows: [], key: "", entries: [], picked: new Set(), facetsDone: false, settings: null};
-function autoGrow(el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight + 2, 420) + "px"; }
+function autoGrow(el) {                       // never measure while hidden (that gave 0 px); CSS keeps a minimum
+  if (!el || !el.offsetParent) return;
+  el.style.height = "auto"; el.style.height = Math.min(Math.max(el.scrollHeight + 2, 0), 420) + "px";
+}
 function wcInsert(text) {
   const ta = $("#idTemplate"), p = ta.selectionStart ?? ta.value.length, before = ta.value.slice(0, p), after = ta.value.slice(p);
   const pad = (before && !/\s$/.test(before) ? " " : "") + text + (after && !/^\s/.test(after) ? " " : "");
@@ -1966,7 +1971,9 @@ function idWire2() {
     const r = {n: ++ID.seq, prompt: text, mode: "wildcards", preset: $("#preset").value, model: "", filled: f.text, keep: true};
     ID.results.push(r); $("#idResults").insertAdjacentHTML("beforeend", idCard(r)); resKeep("id", ID.results); toast("added to the results"); });
   ["#idBrief", "#idTemplate"].forEach(s => { const el = $(s); el.addEventListener("input", () => autoGrow(el)); setTimeout(() => autoGrow(el), 300); });
-  document.querySelector('[data-mode="ideas"]').addEventListener("click", () => { if (ID.mode === "wildcards" && !WC.rows.length) wcSearch().catch(() => {}); });
+  document.querySelector('[data-mode="ideas"]').addEventListener("click", () => {
+    setTimeout(() => ["#idBrief", "#idTemplate"].forEach(s => autoGrow($(s))), 0);
+    if (ID.mode === "wildcards" && !WC.rows.length) wcSearch().catch(() => {}); });
 }
 // ---------------------------------------------------------------- Ideas (no images)
 const ID = {mode: "brief", results: [], since: 0, polling: false, dice: ["genre", "era", "medium", "light", "palette", "mood", "camera", "place"], on: null};
@@ -1985,6 +1992,7 @@ function idRenderMode() {
   $("#idBrief").style.display = ID.mode === "wildcards" ? "none" : "";
   $("#idBrief").placeholder = ID.mode === "dice" ? "optional brief to keep a theme, e.g. underwater" : "brief, e.g. a lantern procession on a frozen lake";
   $("#idHelp").innerHTML = ID_HELP[ID.mode] || ""; if (typeof idRunNote === "function") idRunNote();
+  setTimeout(() => ["#idBrief", "#idTemplate"].forEach(s => autoGrow($(s))), 0);
   if (ID.mode === "wildcards" && typeof WC !== "undefined" && !WC.rows.length && document.body.classList.contains("mode-ideas")) wcSearch().catch(() => {});
   $("#idDice").innerHTML = ID.dice.map(f => `<button data-d="${f}" class="${ID.on.includes(f) ? "on" : ""}">${f}</button>`).join("");
 }
