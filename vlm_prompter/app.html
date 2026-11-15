@@ -1846,7 +1846,7 @@ function idWire() {
   idLoad(); idRenderMode();
   ID.results = resLoad("id"); ID.seq = ID.results.reduce((m, r) => Math.max(m, r.n), 0); $("#idResults").innerHTML = ID.results.map(idCard).join("");
   $("#idClearRes").onclick = () => { if (ID.results.length && !confirm(`Clear ${ID.results.length} ideas from the list?`)) return; ID.results = []; ID.seq = 0; resKeep("id", []); $("#idResults").innerHTML = ""; };
-  $(".idtabs").onclick = e => { const b = e.target.closest("[data-idm]"); if (b) { ID.mode = b.dataset.idm; idRenderMode(); idSave(); } };
+  $("#idPane .idtabs").onclick = e => { const b = e.target.closest("[data-idm]"); if (b) { ID.mode = b.dataset.idm; idRenderMode(); idSave(); } };
   $("#idDice").onclick = e => { const b = e.target.closest("[data-d]"); if (!b) return; const k = ID.on.indexOf(b.dataset.d);
     if (k >= 0) ID.on.splice(k, 1); else ID.on.push(b.dataset.d); idRenderMode(); idSave(); };
   let t = null;
