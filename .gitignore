@@ -16,3 +16,5 @@ settings.json.tmp
 workflows/
 render_presets/
 renders/
+assets/*.mp4
+assets/*.mov

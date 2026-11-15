@@ -13,8 +13,10 @@ the finished renders against their prompts and source images.
 
 Everything runs on your own machine. No cloud, no accounts.
 
-<!-- SCREENSHOT: assets/overview.png - the app with a folder open in Generate mode -->
-![Ekphrasis Prompt Bench](assets/overview.png)
+![Ekphrasis Prompt Bench](assets/hero.jpg)
+
+*Made with the bench: a Photobash of several source pictures, the brass badge added with "add text", rendered with
+Krea 2 straight from the app.*
 
 ---
 
@@ -29,6 +31,9 @@ Everything runs on your own machine. No cloud, no accounts.
   or your own wildcard files.
 - **Rewrite** - turn SDXL tag prompts into rich natural language, change a whole list from "vintage illustration" to
   "professional photograph", apply rules, make variations or minimal-edit twin pairs.
+- **Render from the bench** - a render button on every prompt sends it to your ComfyUI workflow and shows the image
+  under the prompt; edit, render again, compare.
+- **LoRA training captions** - a trigger word in front of every prompt and `<name>.txt` captions beside each image.
 - **Review bench** - rate renders, let a vision model check them (does the render follow the prompt? does it match the
   source?), catch reversed poses with pose detectors, and get reports by prompt version, checkpoint or model.
 - **Fast with big folders** - a virtual gallery that opens 40,000+ image folders in under a second.
@@ -101,12 +106,14 @@ Example `settings.json`:
 
 ---
 
+Most settings can also be changed in the app: **Settings** in the top bar (folders, ComfyUI, workflows, render
+presets). The render keys are `comfyui_url`, `render_gpu` (`shared` or `separate`) and `render_free_after`.
+
 ## The modes
 
 ### Generate - images to prompts
 
-<!-- SCREENSHOT: assets/generate.png - gallery + queue with finished prompts -->
-![Generate](assets/generate.png)
+<!-- screenshot to come: assets/generate.png -->
 
 1. Browse to a folder (recent folders and drives on the left; the gallery handles very large folders).
 2. Select images and **+ Add selected** (or add the whole folder) to the queue.
@@ -122,10 +129,20 @@ head directions) written into one list for an A/B sweep.
 JSONL. The Save tab shows for each file whether it is new, will be added to, or gets a new number. Nothing is ever
 overwritten. Prompts cut off at the token limit are retried automatically with a larger budget.
 
+**Modifier chips** include **Medium** (force a medium such as "35mm film photograph") and **Omit medium words**
+(the prompt names no medium, camera or brush terms - leave the medium to the model or a style LoRA). The same chips
+are available in Photobash.
+
+**Trigger word** - a field in the top bar puts a LoRA trigger at the very front of every prompt, ended with a period
+(`ohwx woman. A woman stands ...`), in every mode. It is added in code after the model writes, so it is exact and never
+doubled.
+
+**Training captions** - an extra Save target writes the first prompt of each image as `<name>.txt` beside it, the form
+ai-toolkit, kohya and OneTrainer read. An existing caption is never overwritten; it is skipped and counted.
+
 ### Photobash - several pictures into one new picture
 
-<!-- SCREENSHOT: assets/photobash.png - three sources (one a folder pool), weights, aspect chips and results -->
-![Photobash](assets/photobash.png)
+<!-- screenshot to come: assets/photobash.png -->
 
 Add 2-4 **sources**: single images, a **folder as a pool** (a random image per mix; a pool can hold several folders,
 each with an equal chance), or **a selection as one pool** (pick a hand-chosen subset of a folder in the gallery -
@@ -210,7 +227,6 @@ model's context, so two or three sources are cheaper and often more coherent tha
 
 ### Ideas - prompts without images
 
-<!-- SCREENSHOT: assets/ideas.png - dice mode with rolled ingredients shown on each result -->
 ![Ideas](assets/ideas.png)
 
 - **brief** - many clearly different takes on one brief.
@@ -221,7 +237,6 @@ model's context, so two or three sources are cheaper and often more coherent tha
 
 ### Rewrite - change existing prompts
 
-<!-- SCREENSHOT: assets/rewrite.png - an edit run with one result's diff open -->
 ![Rewrite](assets/rewrite.png)
 
 Load a prompt list, paste prompts, or send them from the Queue, Photobash or Ideas. Every rewrite comes out in the
@@ -242,8 +257,7 @@ trigger words and names; quoted text is always kept. Results are reviewed **by e
 
 ### Review - check what came back
 
-<!-- SCREENSHOT: assets/review.png - a sweep grouped by prompt, detail panel with render, source and vision check -->
-![Review](assets/review.png)
+<!-- screenshot to come: assets/review.png -->
 
 Open a ComfyUI sweep folder (from the [Eric_Krea2](https://github.com/EricRollei/Krea2_ComfyUI_Advanced) sweep
 system) or any image folder. Renders are grouped by prompt and shown next to their **source image** and the **settings
@@ -260,9 +274,34 @@ and instructions** that made the prompt.
 - **audit** - compares the vision model with the detectors person by person (boxes drawn on the image) so you can see
   which to trust for what.
 
-<!-- SCREENSHOT: assets/report.png - report by version / checkpoint -->
 
 ---
+
+## Rendering with ComfyUI
+
+Every prompt card - in the queue, Photobash, Ideas and Rewrite - has a **render** button. It sends the prompt (as you
+have edited it) to a ComfyUI workflow and shows the result as a thumbnail strip under the prompt; render again after an
+edit and compare. Photobash, Ideas and Rewrite also have **render ticked** for a batch. A pulsing pill in the top bar
+shows progress and has a stop link.
+
+Setting it up, in **Settings** (top bar):
+
+1. **ComfyUI address** - default `http://127.0.0.1:8188`.
+2. **Workflows** - run your workflow once in ComfyUI, then *save my last ComfyUI run as ...*. The app reads it from
+   ComfyUI's history in API form and maps its fields automatically (a text node titled like "prompt", the seed, the
+   negative, width and height); check or change the mapping on the same page.
+3. **Render presets** - a workflow plus images per click, seed (random, or fixed to compare prompt edits fairly), an
+   optional size and negative. Pick the preset in the top bar's **render** menu.
+
+**One GPU or two.** With *one GPU*, the app unloads the LM Studio model while rendering and reloads it automatically when
+the next prompt job starts, and can ask ComfyUI to free its memory after a batch. With *separate GPUs* both run at
+once - prompts are written while images render.
+
+**Batches load models once.** If your workflow ends with an unload-models node, the app leaves it out of every render
+in a batch except the last, so checkpoints and LoRAs stay loaded between images and unload once at the end.
+
+Renders are copied into `renders/` (and kept by ComfyUI as usual); each is linked to its prompt so its strip comes back
+later. Workflows, render presets and renders live in folders that are not part of the repository.
 
 ## Presets
 
