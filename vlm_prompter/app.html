@@ -261,6 +261,8 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
 .lsblock { display:flex; flex-direction:column; gap:2px; font-size:12.5px; }
 .lshint { flex:1; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 #pbTabs { margin:2px 0 4px; }
+
+.pbsum { font-size:12px; color:var(--accent); margin-left:6px; text-decoration:none; border-bottom:1px dotted var(--accent); }
 </style>
 </head>
 <body>
@@ -466,6 +468,7 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
       <button class="primary" id="pbRun">Make mixes</button>
       <button id="pbClearRes" title="Empty the results list (saved lists are not touched)">clear results</button>
       <span class="muted" id="pbState"></span>
+      <a href="#" id="pbSum" class="pbsum" title="What the next run will do - click to change it (Directions tab)"></a>
     </div>
     <div class="pbres" id="pbResults"></div>
     <div class="pbsave">
@@ -1746,7 +1749,9 @@ async function rwPoll() {
   try {
     while (true) {
       const s = await api(`/api/rewrite/status?since=${RW.since}`);
-      if (s.results.length) { s.results.forEach(r => { r.keep = true; r.n = ++RW.seq; RW.results.push(r); }); RW.since += s.results.length; rwRenderResults(); resKeep("rw", RW.results); }
+      if (s.results.length) { const known = new Set(RW.results.map(x => x.prompt));
+        s.results.filter(r => !known.has(r.prompt)).forEach(r => { r.keep = true; r.n = ++RW.seq; RW.results.push(r); });
+        RW.since += s.results.length; rwRenderResults(); resKeep("rw", RW.results); }
       $("#rwRun").textContent = s.running ? "■ Stop" : "Rewrite"; $("#rwRun").className = s.running ? "danger" : "primary";
       $("#rwState").textContent = s.total ? `${s.done || 0}/${s.total}${s.errors ? `, ${s.errors} errors` : ""}${s.running ? "" : " · done"}` : "";
       if (s.last_error) { $("#rwState").title = s.last_error; if (!s.running && !s.count) toast(s.last_error, 8000); }
@@ -1784,6 +1789,7 @@ function rwWire() {
   $("#rwResults").onchange = e => { const k = e.target.dataset.rkeep; if (k) RW.results.find(x => x.n === +k).keep = e.target.checked; };
   $("#rwResults").addEventListener("input", e => { const n = e.target.dataset.redit; if (n) RW.results.find(x => x.n === +n).prompt = e.target.innerText; });
   $("#rwSaveKept").onclick = () => rwSaveList(false).catch(fail);
+  api("/api/rewrite/status?since=0").then(s => { if (s.running) { RW.since = 0; rwPoll(); } }).catch(() => {});
   $("#pbToRw").onclick = () => rwSendTo(PB.results.filter(r => r.keep).map(r => ({text: r.prompt, image: ""})), "photobash");
   $("#idToRw").onclick = () => rwSendTo(ID.results.filter(r => r.keep).map(r => ({text: r.prompt, image: ""})), "ideas");
   $("#qToRw").onclick = () => rwSendTo(S.queue.flatMap(it => (it.prompts || []).map(p => ({text: p, image: it.image}))), "the queue");
@@ -1827,7 +1833,9 @@ async function idPoll() {
   try {
     while (true) {
       const s = await api(`/api/ideas/status?since=${ID.since}`);
-      if (s.results.length) { s.results.forEach(r => { r.keep = true; r.n = ++ID.seq; ID.results.push(r); $("#idResults").insertAdjacentHTML("beforeend", idCard(r)); }); ID.since += s.results.length; resKeep("id", ID.results); }
+      if (s.results.length) { const known = new Set(ID.results.map(x => x.prompt));
+        s.results.filter(r => !known.has(r.prompt)).forEach(r => { r.keep = true; r.n = ++ID.seq; ID.results.push(r); $("#idResults").insertAdjacentHTML("beforeend", idCard(r)); });
+        ID.since += s.results.length; resKeep("id", ID.results); }
       $("#idRun").textContent = s.running ? "■ Stop" : "Make ideas"; $("#idRun").className = s.running ? "danger" : "primary";
       $("#idState").textContent = s.total ? `${s.done || 0}/${s.total}${s.errors ? `, ${s.errors} errors` : ""}${s.running ? "" : " · done"}` : "";
       if (s.last_error) { $("#idState").title = s.last_error; if (!s.running && !s.count) toast(s.last_error, 8000); }
@@ -1863,6 +1871,7 @@ function idWire() {
   $("#idResults").onchange = e => { const k = e.target.dataset.ikeep; if (k) ID.results.find(x => x.n === +k).keep = e.target.checked; };
   $("#idResults").addEventListener("input", e => { const n = e.target.dataset.iedit; if (n) ID.results.find(x => x.n === +n).prompt = e.target.innerText; });
   $("#idSaveKept").onclick = () => idSaveList(false).catch(fail);
+  api("/api/ideas/status?since=0").then(s => { if (s.running) { ID.since = 0; idPoll(); } }).catch(() => {});
   $("#idSaveAll").onclick = () => idSaveList(true).catch(fail);
 }
 // ---------------------------------------------------------------- Photobash
@@ -1871,6 +1880,16 @@ function layoutSpec() { return {aspect: $("#lyAspect").value, mp: +$("#lyMP").va
 function layoutShow() {
   const p = (S.presets || []).find(x => x.id === $("#preset").value);
   $("#lyBox").style.display = p && p.layout ? "" : "none";
+}
+function pbSummary() {
+  const s = $("#pbSum"); if (!s) return;
+  const parts = [$("#pbMode").value, `${+$("#pbMixes").value || 4} mixes`, `temp ${$("#pbTemp").value}`];
+  if ($("#pbSeed").value.trim()) parts.push(`seed ${$("#pbSeed").value.trim()}`);
+  if ($("#pbNoText").checked) parts.push("no text");
+  if ($("#pbNoMarks").checked) parts.push("no marks");
+  const at = $("#pbAddText").value.trim(); if (at) parts.push(`text: "${at.length > 24 ? at.slice(0, 24) + "..." : at}"`);
+  if ($("#pbNote").value.trim()) parts.push("+ note");
+  s.textContent = parts.join(" \u00b7 ");
 }
 function pbSave() { try { localStorage.setItem("vlmp.pb", JSON.stringify({slots: PB.slots, mode: $("#pbMode").value, mixes: $("#pbMixes").value, temp: $("#pbTemp").value, note: $("#pbNote").value,
   noText: $("#pbNoText").checked, noMarks: $("#pbNoMarks").checked, addText: $("#pbAddText").value, textWhere: $("#pbTextWhere").value})); } catch {} }
@@ -1924,7 +1943,9 @@ async function pbPoll() {
   try {
     while (true) {
       const s = await api(`/api/photobash/status?since=${PB.since}`);
-      if (s.results.length) { s.results.forEach(r => { r.keep = true; r.n = ++PB.seq; }); PB.results.push(...s.results); PB.since += s.results.length; pbRenderResults(s.results); resKeep("pb", PB.results); }
+      if (s.results.length) { const known = new Set(PB.results.map(x => x.prompt));      // after a reload: skip ones we have
+        const fresh = s.results.filter(r => !known.has(r.prompt)); fresh.forEach(r => { r.keep = true; r.n = ++PB.seq; });
+        PB.results.push(...fresh); PB.since += s.results.length; if (fresh.length) pbRenderResults(fresh); resKeep("pb", PB.results); }
       $("#pbRun").textContent = s.running ? "■ Stop" : "Make mixes"; $("#pbRun").className = s.running ? "danger" : "primary";
       $("#pbState").textContent = s.total ? `${s.done || 0}/${s.total}${s.errors ? `, ${s.errors} errors` : ""}${s.running ? "" : " · done"}` : "";
       if (s.last_error) $("#pbState").title = s.last_error;
@@ -1968,7 +1989,11 @@ function pbWire() {
     const f = e.target.closest("[data-f]"); if (f) { const s = PB.slots[+f.dataset.s]; const k = s.only.indexOf(f.dataset.f);
       if (k >= 0) s.only.splice(k, 1); else s.only.push(f.dataset.f); pbRenderSlots(); pbSave(); }
   };
-  ["#pbMode", "#pbMixes", "#pbTemp", "#pbNote", "#pbNoText", "#pbNoMarks", "#pbAddText", "#pbTextWhere"].forEach(s => $(s).addEventListener("change", pbSave));
+  ["#pbMode", "#pbMixes", "#pbTemp", "#pbNote", "#pbNoText", "#pbNoMarks", "#pbAddText", "#pbTextWhere", "#pbSeed"].forEach(s => {
+    $(s).addEventListener("change", () => { pbSave(); pbSummary(); }); $(s).addEventListener("input", pbSummary); });
+  pbSummary();
+  $("#pbSum").onclick = e => { e.preventDefault(); document.querySelector('#pbTabs [data-pt="dir"]').click(); };
+  api("/api/photobash/status?since=0").then(s => { if (s.running) { PB.since = 0; pbPoll(); } }).catch(() => {});
   $("#pbRun").onclick = () => pbRun().catch(fail);
   $("#pbResults").onclick = e => {
     const c = e.target.closest("[data-copy]"); if (c) { const r = PB.results.find(x => x.n === +c.dataset.copy); navigator.clipboard.writeText(r.prompt).then(() => toast("copied")); }
