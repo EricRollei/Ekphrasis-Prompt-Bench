@@ -74,8 +74,16 @@ DICE_RULES = """Build the picture from these rolled ingredients (use all of them
 odd combinations are the point):
 {roll}"""
 
-POLISH_RULES = """Expand this rough idea into a full picture, keeping every element it names:
-{seed}"""
+POLISH_RULES = """Turn this rough idea into a full picture and write its prompt.
+
+ROUGH IDEA (the user's template with its wildcards already filled in):
+{seed}
+
+{picks}
+
+Everything in the rough idea that is not listed above as a randomly selected element is the user's own wording:
+keep its meaning and intent exactly (you may improve the phrasing). Add concrete, visual detail that fits all of it -
+one coherent picture."""
 
 
 # ----------------------------------------------------------------------------------------------- wildcards
@@ -182,7 +190,7 @@ class IdeasJob:
             presets = load_presets(config.PRESETS_DIR)
             preset = presets[spec.get("preset") or settings["default_preset"]]
             composed = compose(preset, [], "", 1)
-            use_model = mode != "wildcards" or bool(spec.get("polish"))
+            use_model = True                      # polish is automatic (Nov 15): wildcards are always written up
             client = api_id = caps = mode_r = None
             if use_model:
                 from .jobs import make_client, resolve_model
@@ -193,7 +201,10 @@ class IdeasJob:
                 mode_r = normalise_mode(spec.get("reasoning") or preset.reasoning, caps)
                 with self.lock:
                     self.state["model"] = api_id
-            wc = wildcards(settings.get("wildcards_dir") or "") if mode == "wildcards" else None
+            from . import wc as wcmod
+            providers = {"llm": wcmod.make_llm_provider(client, api_id, caps)} if mode == "wildcards" else {}
+            if mode == "wildcards":
+                wcmod.engine(settings)                # fail early when the wildcards folder is not set
             brief = (spec.get("brief") or "").strip()
             facets = [f for f in (spec.get("dice") or list(DICE)) if f in DICE]
             temp = float(spec.get("temperature") or 1.0)
@@ -205,15 +216,14 @@ class IdeasJob:
                 try:
                     info: Dict[str, Any] = {}
                     if mode == "wildcards":
-                        seed_text = wc.fill(spec["template"], rng)
-                        info["filled"] = seed_text
-                        if not use_model:
-                            if spec.get("trigger"):
-                                from .instructions import apply_trigger
-                                seed_text = apply_trigger(seed_text, spec["trigger"], preset.output)
-                            self._add(n, seed_text, mode, preset.id, "", info)
-                            continue
-                        rules = POLISH_RULES.format(seed=seed_text)
+                        res = wcmod.process(settings, spec["template"], seed=rng.randrange(0, 0x7FFFFFFF),
+                                            providers=providers)
+                        if res.blocked:
+                            raise ValueError(f"content filter blanked this fill ({res.blocked})")
+                        info["filled"] = res.text
+                        info["picks"] = [f"{s.label or s.source}: {s.value}" for s in res.top_level_slots()]
+                        rules = POLISH_RULES.format(seed=res.text, picks=res.format_for_llm() or
+                                                    "(no random picks - all of it is the user's own words)")
                     elif mode == "dice":
                         r = roll(rng, facets)
                         info["roll"] = r

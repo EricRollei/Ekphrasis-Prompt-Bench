@@ -240,7 +240,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/api/compare/status": self.compare_status, "/api/photobash/status": self.pb_status,
                 "/api/ideas/status": self.id_status, "/api/ideas/wildcards": self.id_wildcards,
                 "/api/rewrite/status": self.rw_status, "/api/settings/all": self.settings_all,
-                "/api/lists/peek": self.lists_peek,
+                "/api/lists/peek": self.lists_peek, "/api/wc/search": self.wc_search, "/api/wc/entries": self.wc_entries,
                 "/api/render/state": self.r_state, "/api/render/status": self.r_status,
                 "/api/render/fields": self.r_fields, "/api/render/for": self.r_for, "/api/models": self.models, "/api/drives": self.drives,
                 "/api/ls": self.ls, "/thumb": self.thumb, "/api/queue": self.queue_get, "/api/queues": self.queues,
@@ -280,7 +280,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/api/ideas/start": self.id_start, "/api/ideas/stop": self.id_stop, "/api/ideas/save": self.id_save,
                 "/api/rewrite/start": self.rw_start, "/api/rewrite/stop": self.rw_stop, "/api/rewrite/save": self.rw_save,
                 "/api/rewrite/load": self.rw_load, "/api/rewrite/split": self.rw_split,
-                "/api/render/start": self.r_start, "/api/render/stop": self.r_stop,
+                "/api/render/start": self.r_start, "/api/render/stop": self.r_stop, "/api/wc/roll": self.wc_roll,
                 "/api/render/fromlast": self.r_fromlast, "/api/render/map": self.r_map,
                 "/api/render/preset": self.r_preset, "/api/render/for_many": self.r_for_many,
             }.get(url.path)
@@ -364,7 +364,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def settings_put(self, body):
         allowed = {"group_dir", "load_context_length", "max_side", "default_preset", "wildcards_dir", "sweeps_dir",
-                   "lmstudio_models_dir", "comfyui_url", "render_gpu", "render_free_after", "render_preset"}
+                   "lmstudio_models_dir", "comfyui_url", "render_gpu", "render_free_after", "render_preset",
+                   "wc_nsfw", "wc_violence", "wc_content_filter", "wc_strip_lora"}
         with SETTINGS_LOCK:
             s = config.load_settings()
             for k, v in body.items():
@@ -640,6 +641,24 @@ class Handler(BaseHTTPRequestHandler):
         self._json(report.build(q.get("kind", "sweep"), q.get("path", "")))
 
     # --- Settings page + Render (ComfyUI) ---------------------------------------------------------------------
+    def wc_search(self, q):
+        from . import wc
+        try:
+            self._json(wc.search(config.load_settings(), q.get("q", ""), q.get("facet", ""), int(q.get("limit") or 80),
+                                 small=q.get("small") == "1"))
+        except ValueError as exc:
+            self._json({"rows": [], "facets": [], "total": 0, "error": str(exc)})
+
+    def wc_entries(self, q):
+        from . import wc
+        self._json(wc.entries(config.load_settings(), q.get("key", ""), int(q.get("limit") or 400)))
+
+    def wc_roll(self, body):
+        from . import wc
+        seed = body.get("seed")
+        self._json(wc.roll(config.load_settings(), body.get("template", ""), int(body.get("n") or 5),
+                           int(seed) if str(seed or "").lstrip("-").isdigit() else None))
+
     def lists_peek(self, q):
         from . import lists
         self._json(lists.peek(config.load_settings(), q.get("name", ""), q.get("stem", "list"), q.get("fmt", "lines")))
@@ -647,7 +666,8 @@ class Handler(BaseHTTPRequestHandler):
     def settings_all(self, q):
         s = config.load_settings()
         keys = ("group_dir", "wildcards_dir", "sweeps_dir", "lmstudio_models_dir", "load_context_length", "comfyui_url",
-                "render_gpu", "render_free_after", "render_preset")
+                "render_gpu", "render_free_after", "render_preset", "wc_nsfw", "wc_violence", "wc_content_filter",
+                "wc_strip_lora")
         self._json({k: s.get(k) for k in keys})
 
     def r_state(self, q):

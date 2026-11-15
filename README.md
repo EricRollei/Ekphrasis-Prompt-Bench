@@ -229,11 +229,26 @@ model's context, so two or three sources are cheaper and often more coherent tha
 
 ![Ideas](assets/ideas.png)
 
-- **brief** - many clearly different takes on one brief.
-- **dice** - each idea gets a random roll of genre, era, medium, light, palette, mood, camera and place (optionally on
-  top of a brief). Odd combinations are the point.
-- **wildcards** - templates with `__name__` (your wildcard `.txt` files, with a search box) and `{a|b|c}` choices,
-  optionally polished into a full prompt by the model.
+Prompt lists without source images, written by the loaded model in the chosen preset's format.
+
+- **brief** - a theme or scene in a few words; the model writes as many clearly different takes as you ask for.
+- **dice** - every idea gets a random roll of ingredients (genre, era, medium, light, palette, mood, camera, place) and
+  the model builds one coherent picture from it. Add a brief to keep a theme.
+- **wildcards** - a template of your own words plus wildcards, filled fresh for every idea and then written up by the
+  model. The model is told which parts were picked at random and which are your words: picks are kept as concepts
+  (reworded to suit the preset), your words keep their meaning, and `__llm:...__` slots are invented by the model.
+
+The wildcard engine is the one from the
+[video_prompter](https://github.com/EricRollei/Local_LLM_Prompt_Enhancer) nodes (vendored in `vlm_prompter/wildcards`,
+refreshed with `tools/sync_wildcards.py`): Dynamic Prompts compatible syntax plus weights, multi-select, exclusions
+(`__list!{a|b}__`), variables, conditionals, exact (`__=list__`) and loose (`__?list__`) picks, and LLM slots. A
+**wildcard browser** searches the lists in your wildcards folder (by name, entries and facet - wardrobe, lighting,
+setting ...), previews a list's entries, and inserts the list, a ticked subset (`{a|b}`) or "all but ticked" at the
+cursor. **Roll 5** shows raw fills without the model, and any fill can be used as it is.
+
+The catalog (`_catalog.sqlite`) and your curation (`_catalog_user.yaml`: stars, hidden lists, dropped entries) live in
+the wildcards folder itself, so the same stars and hidden lists apply in video_prompter. The NSFW level, violence
+filter and content filter are set once in **Settings**.
 
 ### Rewrite - change existing prompts
 

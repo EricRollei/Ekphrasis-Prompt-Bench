@@ -68,6 +68,12 @@ DEFAULTS: Dict[str, Any] = {
     "render_gpu": "shared",             # shared: unload the LM Studio model while rendering | separate: both at once
     "render_free_after": True,          # shared GPU: ask ComfyUI to free its VRAM after a render batch
     "render_preset": "",                # last render preset used
+
+    # --- Wildcards (Ideas tab; the engine shared with video_prompter) ---------------------------------------------------
+    "wc_nsfw": "off",                   # off | suggestive | nudity | explicit - lists and entries above it are never picked
+    "wc_violence": "off",               # off | no gore | no gore or violent acts | no violence or weapons
+    "wc_content_filter": True,          # drop entries / prompts pairing minor-related and sexual terms
+    "wc_strip_lora": True,              # remove <lora:...> tags from entries
     "recent_folders": [],
 }
 

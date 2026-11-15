@@ -267,6 +267,37 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
 .pbbasics { padding:4px 0 2px; border-bottom:1px solid var(--line); margin-bottom:4px; }
 .pbprev { white-space:pre-wrap; font-size:11.5px; line-height:1.4; max-height:320px; overflow:auto; background:var(--soft); padding:8px; border-radius:6px; margin:0; }
 #pbPrevBox summary { cursor:pointer; font-size:12.5px; font-weight:600; margin-top:6px; }
+
+/* Ideas page (Nov 15) */
+body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
+.idleft { font-size:13.5px; }
+.idhead h2 { font-size:21px; margin:2px 0 4px; }
+.idhead p { margin:0 0 6px; line-height:1.45; color:var(--text); }
+.idsec { border-top:1px solid var(--line); padding:10px 0 6px; display:flex; flex-direction:column; gap:8px; }
+.idsec h3 { font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0; }
+.idhelp { background:var(--soft); border-radius:8px; padding:8px 11px; line-height:1.45; font-size:13px; }
+.idhelp code, .wchelp code { font-size:12px; }
+.idfull { width:100%; box-sizing:border-box; resize:none; font-size:14px; line-height:1.4; overflow:hidden; }
+.mono { font-family:ui-monospace, Consolas, monospace; font-size:13px; }
+.idlabel { font-size:12px; color:var(--muted); }
+.wcbar { display:flex; gap:6px; } .wcbar input { flex:1; }
+.wcwrap { display:grid; grid-template-columns:1fr 1fr; gap:8px; height:300px; }
+.wclist, .wcprev { overflow:auto; border:1px solid var(--line); border-radius:8px; background:var(--bg); }
+.wcrow { display:flex; gap:6px; align-items:baseline; padding:4px 8px; border-bottom:1px solid var(--line); cursor:pointer; font-size:12.5px; }
+.wcrow:hover { background:var(--soft); } .wcrow.on { background:var(--soft); box-shadow:inset 3px 0 0 var(--accent); }
+.wcname { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.wcstar { color:#d4a017; font-size:11px; } .wcn { color:var(--muted); font-size:11px; }
+.wcprevhead { padding:6px 8px; font-size:12.5px; border-bottom:1px solid var(--line); word-break:break-all; }
+.wcbtns { display:flex; flex-wrap:wrap; gap:4px; padding:6px 8px; border-bottom:1px solid var(--line); }
+.wcbtns button { font-size:11.5px; padding:1px 7px; }
+.wcents { padding:4px 8px; display:flex; flex-direction:column; gap:1px; font-size:12.5px; }
+.wcents label { display:flex; gap:6px; align-items:baseline; }
+.wchelp summary { cursor:pointer; font-size:12.5px; color:var(--muted); }
+.wchelp table { font-size:12.5px; border-collapse:collapse; margin-top:4px; }
+.wchelp td { padding:2px 8px 2px 0; vertical-align:top; } .wchelp td:first-child { white-space:nowrap; }
+.wcroll { display:flex; gap:8px; align-items:center; font-size:12.5px; }
+.wcfill { border:1px solid var(--line); border-radius:8px; padding:6px 8px; margin:4px 0; font-size:13px; display:flex; flex-direction:column; gap:3px; }
+.wcfill button { align-self:flex-start; font-size:11.5px; padding:1px 8px; }
 </style>
 </head>
 <body>
@@ -397,33 +428,69 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
     </div>
   </section>
   <section id="idPane">
-    <div class="idcol">
-      <div class="pbhead"><b>Ideas</b> <span class="muted">prompt lists without images, written for the preset chosen at the top</span></div>
-      <div class="idtabs">
-        <button data-idm="brief" title="The model writes many distinct takes on your brief">brief</button>
-        <button data-idm="dice" title="Each idea gets a random roll of genre, era, medium, light, palette, mood, camera, place - optionally on top of a brief">dice</button>
-        <button data-idm="wildcards" title="Fill a template with your wildcard files (__name__) and {a|b|c} choices">wildcards</button>
-      </div>
-      <textarea id="idBrief" rows="3" placeholder="brief, e.g. a lantern procession on a frozen lake (optional in dice mode)"></textarea>
-      <div id="idDiceBox">
-        <div class="muted" style="font-size:12px;margin:2px 0">roll these:</div>
-        <div class="pbfac" id="idDice"></div>
-      </div>
-      <div id="idWcBox">
-        <textarea id="idTemplate" rows="4" placeholder="template, e.g. a __facialExpressionsFor_v10__ {knight|dancer|astronaut} in __fatalFrameBackground_v10__, __cameraAngleBible_v11__"></textarea>
-        <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
-          <input type="text" id="idWcSearch" placeholder="find a wildcard file (type part of its name)" style="flex:1">
-          <label title="Let the model turn each filled template into a full prompt in the preset's format; off = the filled text is the prompt"><input type="checkbox" id="idPolish" checked> polish with the model</label>
+    <div class="idcol idleft">
+      <div class="idhead"><h2>Ideas</h2>
+        <p>Make prompt lists <b>without source images</b>. Every idea is written by the model loaded in LM Studio, in the
+        format of the <b>Preset</b> chosen at the top (Krea 2, MOSS, Ideogram ...) and with the trigger word if one is set.
+        Choose how the ideas are made:</p></div>
+      <section class="idsec">
+        <h3>1 &middot; What to make</h3>
+        <div class="idtabs">
+          <button data-idm="brief">brief</button>
+          <button data-idm="dice">dice</button>
+          <button data-idm="wildcards">wildcards</button>
         </div>
-        <div id="idWcHits" class="idhits"></div>
-      </div>
-      <div class="pbopts">
-        <label>how many <input type="number" id="idCount" value="8" min="1" max="500" style="width:64px"></label>
-        <label title="Higher = more varied, stranger ideas">temperature <input type="number" id="idTemp" value="1.0" min="0" max="2" step="0.05" style="width:64px"></label>
-        <label title="Same seed = same rolls / wildcard picks">seed <input type="text" id="idSeed" placeholder="random" style="width:80px"></label>
-      </div>
-      <div id="idSaveBox"></div>
-      <div class="pbrun"><button class="primary" id="idRun">Make ideas</button><button id="idClearRes" title="Empty the results list">clear results</button><span class="muted" id="idState"></span></div>
+        <div class="idhelp" id="idHelp"></div>
+        <textarea id="idBrief" class="idfull" rows="2" placeholder="brief, e.g. a lantern procession on a frozen lake"></textarea>
+        <div id="idDiceBox">
+          <div class="idlabel">roll these ingredients for every idea:</div>
+          <div class="pbfac" id="idDice"></div>
+        </div>
+        <div id="idWcBox">
+          <div class="idlabel">template - your own words plus wildcards (click a list below to insert it at the cursor)</div>
+          <textarea id="idTemplate" class="idfull mono" rows="3" placeholder="e.g. a woman with __hair color__ hair in a {red|black|ivory} dress, __lighting__, in __llm:an unexpected place__"></textarea>
+          <div class="wcbar">
+            <input type="text" id="idWcSearch" placeholder="search wildcard lists - e.g. hair, lighting, dress, architecture">
+            <select id="idWcFacet" title="Only lists of this kind"><option value="">all facets</option></select>
+          </div>
+          <div class="wcwrap">
+            <div class="wclist" id="idWcHits"><div class="muted" style="padding:8px">type to search, or browse the best lists</div></div>
+            <div class="wcprev" id="idWcPrev"><div class="muted" style="padding:8px">click a list to see its entries</div></div>
+          </div>
+          <div class="muted" id="idWcInfo" style="font-size:11.5px"></div>
+          <details class="wchelp"><summary>wildcard syntax</summary>
+            <table>
+              <tr><td><code>__list__</code></td><td>a random line from the list (kept as a <i>concept</i>: the model may reword it)</td></tr>
+              <tr><td><code>__=list__</code></td><td>the exact words must survive (names, LoRA triggers)</td></tr>
+              <tr><td><code>__?list__</code></td><td>loose inspiration - the model may transform it</td></tr>
+              <tr><td><code>__list!{a|b}__</code></td><td>any line except a and b</td></tr>
+              <tr><td><code>__folder/*__</code></td><td>any list in that folder</td></tr>
+              <tr><td><code>{a|b|c}</code></td><td>one of the options (nesting allowed)</td></tr>
+              <tr><td><code>{3::common|1::rare}</code></td><td>weighted options</td></tr>
+              <tr><td><code>{2$$ and $$a|b|c}</code></td><td>pick 2, joined by " and "; <code>{1-3$$a|b|c}</code> picks 1 to 3</td></tr>
+              <tr><td><code>${h=!__hair color__}</code> &hellip; <code>${h}</code></td><td>pick once, use the same pick again</td></tr>
+              <tr><td><code>[if night : neon | daylight]</code></td><td>conditional on what was picked</td></tr>
+              <tr><td><code>__llm:a 1980s hairstyle__</code></td><td>the loaded model invents it, in the context of the rest</td></tr>
+            </table>
+          </details>
+          <div class="wcroll"><button id="idRoll">Roll 5</button><span class="muted">raw fills without the model - check a template before running it</span></div>
+          <div id="idRolls"></div>
+        </div>
+      </section>
+      <section class="idsec">
+        <h3>2 &middot; Run</h3>
+        <div class="pbopts">
+          <label>how many <input type="number" id="idCount" value="8" min="1" max="500" style="width:70px"></label>
+          <label title="Higher = more varied, stranger ideas">temperature <input type="number" id="idTemp" value="1.0" min="0" max="2" step="0.05" style="width:70px"></label>
+          <label title="Same seed = same rolls and wildcard picks">seed <input type="text" id="idSeed" placeholder="random" style="width:90px"></label>
+        </div>
+        <div class="muted" id="idRunNote" style="font-size:12px;margin:4px 0 8px"></div>
+        <div class="pbrun"><button class="primary" id="idRun">Make ideas</button><button id="idClearRes" title="Empty the results list">clear results</button><span class="muted" id="idState"></span></div>
+      </section>
+      <section class="idsec">
+        <h3>3 &middot; Save list</h3>
+        <div id="idSaveBox"></div>
+      </section>
     </div>
     <div class="idcol">
       <div class="pbres" id="idResults"></div>
@@ -1540,7 +1607,7 @@ function lsSaveDone(d, n) {
 }
 function lsWire() {
   $("#pbSaveTab").innerHTML = lsBlock("pb", "photobash");
-  $("#idSaveBox").innerHTML = '<h4 style="margin:8px 0 2px">Save list</h4>' + lsBlock("id", "ideas");
+  $("#idSaveBox").innerHTML = lsBlock("id", "ideas");
   $("#rwSaveBox").innerHTML = '<h4 style="margin:8px 0 2px">Save list</h4>' + lsBlock("rw", "rewrite");
   document.addEventListener("change", e => {
     const b = e.target.closest(".lsblock"); if (!b) return;
@@ -1622,6 +1689,12 @@ async function rnOpenSettings() {
     <h3>Folders</h3>
     ${[["group_dir", "prompt lists"], ["wildcards_dir", "wildcards (.txt files)"], ["sweeps_dir", "sweeps to review (ComfyUI output/sweeps)"], ["lmstudio_models_dir", "LM Studio models folder"]].map(([k, l]) =>
       `<label class="setrow"><span>${l}</span><input type="text" data-set="${k}" value="${esc(st[k] || "")}"></label>`).join("")}
+    <h3>Wildcards (Ideas tab)</h3>
+    <label class="setrow"><span>NSFW level</span><select data-set="wc_nsfw">${["off", "suggestive", "nudity", "explicit"].map(v => `<option ${st.wc_nsfw === v ? "selected" : ""}>${v}</option>`).join("")}</select></label>
+    <label class="setrow"><span>violence filter</span><select data-set="wc_violence">${["off", "no gore", "no gore or violent acts", "no violence or weapons"].map(v => `<option ${st.wc_violence === v ? "selected" : ""}>${v}</option>`).join("")}</select></label>
+    <label class="setrow"><span></span><span><input type="checkbox" data-set="wc_content_filter" ${st.wc_content_filter !== false ? "checked" : ""}> content filter: drop entries and fills that pair minor-related and sexual terms</span></label>
+    <label class="setrow"><span></span><span><input type="checkbox" data-set="wc_strip_lora" ${st.wc_strip_lora !== false ? "checked" : ""}> remove &lt;lora:...&gt; tags from wildcard entries</span></label>
+    <div class="muted" style="font-size:12px">Your stars, hidden lists and dropped entries (_catalog_user.yaml in the wildcards folder) apply automatically - the same file video_prompter uses.</div>
     <h3>ComfyUI</h3>
     <label class="setrow"><span>address</span><input type="text" data-set="comfyui_url" value="${esc(st.comfyui_url || "")}"></label>
     <label class="setrow"><span>GPU sharing</span><select data-set="render_gpu"><option value="shared" ${st.render_gpu !== "separate" ? "selected" : ""}>one GPU - unload the LM Studio model while rendering (reloaded for the next prompt job)</option><option value="separate" ${st.render_gpu === "separate" ? "selected" : ""}>separate GPUs - render while prompts are written</option></select></label>
@@ -1640,6 +1713,7 @@ async function rnOpenSettings() {
   $("#setSave").onclick = async () => {
     const body = {}; document.querySelectorAll("#setBody [data-set]").forEach(el => body[el.dataset.set] = el.type === "checkbox" ? el.checked : el.value.trim());
     await api("/api/settings", body); toast("settings saved");
+    if (typeof WC !== "undefined") { WC.settings = {...(WC.settings || {}), ...body}; WC.facetsDone = false; idRunNote(); }
   };
   $("#wfSave").onclick = async () => { const n = $("#wfName").value.trim(); if (!n) return toast("give the workflow a name");
     const d = await api("/api/render/fromlast", {name: n}); toast(`saved ${d.name} (${d.nodes} nodes)`); rnOpenSettings(); };
@@ -1811,14 +1885,97 @@ function rwWire() {
   $("#qToRw").onclick = () => rwSendTo(S.queue.flatMap(it => (it.prompts || []).map(p => ({text: p, image: it.image}))), "the queue");
   $("#rwSaveAll").onclick = () => rwSaveList(true).catch(fail);
 }
+// ---------------------------------------------------------------- Ideas: mode help, wildcard browser, rolls (Nov 15)
+const ID_HELP = {
+  brief: `<b>brief</b> - describe a theme or a scene in a few words. The model writes as many <i>clearly different</i> takes
+    on it as you ask for, each with its own angle on subject, setting, era and style, so the list does not repeat itself.
+    <br><span class="muted">Example: a lantern procession on a frozen lake</span>`,
+  dice: `<b>dice</b> - every idea gets a random roll of the ingredients you tick below (genre, era, medium, light, palette,
+    mood, camera, place), and the model builds one coherent picture from the roll. The odd combinations are the point.
+    Add a brief to keep a theme. Each result shows its roll.`,
+  wildcards: `<b>wildcards</b> - write a template from your own words plus wildcards: <code>__list__</code> picks a random line
+    from a list, <code>{a|b|c}</code> picks one option, <code>__llm:...__</code> lets the model invent something. Every idea gets
+    a fresh fill, and the model then writes it up for the preset: picked elements are kept as concepts (reworded to suit the
+    preset), your own words keep their meaning. Lists come from the wildcards folder in Settings, with your stars, hidden
+    lists and NSFW level applied.`,
+};
+const WC = {rows: [], key: "", entries: [], picked: new Set(), facetsDone: false, settings: null};
+function autoGrow(el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight + 2, 420) + "px"; }
+function wcInsert(text) {
+  const ta = $("#idTemplate"), p = ta.selectionStart ?? ta.value.length, before = ta.value.slice(0, p), after = ta.value.slice(p);
+  const pad = (before && !/\s$/.test(before) ? " " : "") + text + (after && !/^\s/.test(after) ? " " : "");
+  ta.value = before + pad + after; ta.focus(); ta.selectionStart = ta.selectionEnd = (before + pad).length; autoGrow(ta); idSave();
+}
+async function wcSearch() {
+  const q = $("#idWcSearch").value.trim(), f = $("#idWcFacet").value;
+  const d = await api(`/api/wc/search?q=${encodeURIComponent(q)}&facet=${encodeURIComponent(f)}&limit=120`);
+  if (d.error) { $("#idWcHits").innerHTML = `<div class="muted" style="padding:8px">${esc(d.error)}</div>`; return; }
+  if (!WC.facetsDone && d.facets) { WC.facetsDone = true;
+    $("#idWcFacet").innerHTML = '<option value="">all facets</option>' + d.facets.filter(([n]) => n).map(([n, c]) => `<option value="${esc(n)}">${esc(n.replace(/_/g, " "))} (${c})</option>`).join(""); $("#idWcFacet").value = f; }
+  WC.rows = d.rows;
+  $("#idWcHits").innerHTML = d.rows.length ? d.rows.map(r => `<div class="wcrow${r.key === WC.key ? " on" : ""}" data-k="${esc(r.key)}" title="${esc(r.key)}&#10;${esc((r.samples || []).slice(0, 4).join(" · "))}">
+      <span class="wcname">${esc(r.display)}</span>${r.stars ? `<span class="wcstar">${"&#9733;".repeat(r.stars)}</span>` : ""}<span class="wcn">${r.entries}</span></div>`).join("")
+    : '<div class="muted" style="padding:8px">no lists match</div>';
+  $("#idWcInfo").textContent = `${d.total} list(s)${q ? " match" : ""} of ${d.lists} · NSFW level ${d.nsfw} (Settings) · lists under 8 entries are hidden`;
+}
+async function wcPreview(key) {
+  const d = await api(`/api/wc/entries?key=${encodeURIComponent(key)}&limit=400`);
+  WC.key = key; WC.entries = d.entries; WC.picked = new Set();
+  document.querySelectorAll(".wcrow").forEach(r => r.classList.toggle("on", r.dataset.k === key));
+  $("#idWcPrev").innerHTML = `<div class="wcprevhead"><b>${esc(key)}</b> <span class="muted">${d.count} entries${d.truncated ? " (first 400 shown)" : ""}</span></div>
+    <div class="wcbtns"><button data-wci="plain" title="A random line every time">insert __list__</button>
+      <button data-wci="exact" title="Random line, kept word for word (names, triggers)">insert exact</button>
+      <button data-wci="subset" title="Only the ticked entries: {a|b|c}">insert ticked</button>
+      <button data-wci="except" title="Any entry except the ticked ones">insert all but ticked</button></div>
+    <div class="wcents">${d.entries.map((e, i) => `<label><input type="checkbox" data-wce="${i}"> ${esc(e)}</label>`).join("")}</div>`;
+}
+function wcInsertFrom(kind) {
+  if (!WC.key) return;
+  const picked = [...WC.picked].map(i => WC.entries[i].replace(/[|{}]/g, " "));
+  if ((kind === "subset" || kind === "except") && !picked.length) return toast("tick some entries first");
+  wcInsert(kind === "plain" ? `__${WC.key}__` : kind === "exact" ? `__=${WC.key}__`
+    : kind === "subset" ? `{${picked.join("|")}}` : `__${WC.key}!{${picked.join("|")}}__`);
+}
+async function wcRoll() {
+  const tpl = $("#idTemplate").value.trim(); if (!tpl) return toast("write a template first");
+  const d = await api("/api/wc/roll", {template: tpl, n: 5, seed: $("#idSeed").value.trim()});
+  $("#idRolls").innerHTML = d.fills.map((f, i) => `<div class="wcfill"><div>${f.blocked ? `<span class="rwbadge">blocked: ${esc(f.blocked)}</span>` : esc(f.text)}</div>
+    <div class="muted" style="font-size:11px">${esc(f.picks.join(" · "))}${f.warnings.length ? " · " + esc(f.warnings.join(" / ")) : ""}</div>
+    ${f.blocked ? "" : `<button data-useraw="${i}" title="Add this fill as it is (no model) to the results">use as is</button>`}</div>`).join("");
+  WC.fills = d.fills;
+}
+function idRunNote() {
+  const s = WC.settings || {};
+  $("#idRunNote").innerHTML = ID.mode !== "wildcards" ? "" :
+    `Each fill is written up by the model automatically: picked elements kept as concepts, your words as you wrote them.
+     Wildcard limits from Settings: NSFW <b>${esc(s.wc_nsfw || "off")}</b> · violence filter <b>${esc(s.wc_violence || "off")}</b>
+     · content filter <b>${s.wc_content_filter === false ? "off" : "on"}</b>.`;
+}
+function idWire2() {
+  api("/api/settings/all").then(s => { WC.settings = s; idRunNote(); }).catch(() => {});
+  let t = null;
+  $("#idWcSearch").addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => wcSearch().catch(fail), 250); });
+  $("#idWcFacet").addEventListener("change", () => wcSearch().catch(fail));
+  $("#idWcHits").addEventListener("click", e => { const r = e.target.closest("[data-k]"); if (r) wcPreview(r.dataset.k).catch(fail); });
+  $("#idWcHits").addEventListener("dblclick", e => { const r = e.target.closest("[data-k]"); if (r) wcInsert(`__${r.dataset.k}__`); });
+  $("#idWcPrev").addEventListener("click", e => { const b = e.target.closest("[data-wci]"); if (b) wcInsertFrom(b.dataset.wci); });
+  $("#idWcPrev").addEventListener("change", e => { const i = e.target.dataset.wce; if (i === undefined) return; e.target.checked ? WC.picked.add(+i) : WC.picked.delete(+i); });
+  $("#idRoll").addEventListener("click", () => wcRoll().catch(fail));
+  $("#idRolls").addEventListener("click", e => { const b = e.target.closest("[data-useraw]"); if (!b) return; const f = WC.fills[+b.dataset.useraw];
+    const trig = $("#trigger").value.trim().replace(/[.,;:\s]+$/, ""); const text = trig ? `${trig}. ${f.text}` : f.text;
+    const r = {n: ++ID.seq, prompt: text, mode: "wildcards", preset: $("#preset").value, model: "", filled: f.text, keep: true};
+    ID.results.push(r); $("#idResults").insertAdjacentHTML("beforeend", idCard(r)); resKeep("id", ID.results); toast("added to the results"); });
+  ["#idBrief", "#idTemplate"].forEach(s => { const el = $(s); el.addEventListener("input", () => autoGrow(el)); setTimeout(() => autoGrow(el), 300); });
+  document.querySelector('[data-mode="ideas"]').addEventListener("click", () => { if (ID.mode === "wildcards" && !WC.rows.length) wcSearch().catch(() => {}); });
+}
 // ---------------------------------------------------------------- Ideas (no images)
 const ID = {mode: "brief", results: [], since: 0, polling: false, dice: ["genre", "era", "medium", "light", "palette", "mood", "camera", "place"], on: null};
 function idSave() { try { localStorage.setItem("vlmp.ideas", JSON.stringify({mode: ID.mode, on: ID.on, brief: $("#idBrief").value, template: $("#idTemplate").value,
-  count: $("#idCount").value, temp: $("#idTemp").value, polish: $("#idPolish").checked})); } catch {} }
+  count: $("#idCount").value, temp: $("#idTemp").value})); } catch {} }
 function idLoad() {
   try { const d = JSON.parse(localStorage.getItem("vlmp.ideas") || "{}"); ID.mode = d.mode || "brief"; ID.on = d.on || null;
     if (d.brief) $("#idBrief").value = d.brief; if (d.template) $("#idTemplate").value = d.template; if (d.count) $("#idCount").value = d.count;
-    if (d.temp) $("#idTemp").value = d.temp; if (d.polish !== undefined) $("#idPolish").checked = d.polish; } catch {}
+    if (d.temp) $("#idTemp").value = d.temp; } catch {}
   if (!ID.on) ID.on = [...ID.dice];
 }
 function idRenderMode() {
@@ -1826,6 +1983,9 @@ function idRenderMode() {
   $("#idDiceBox").style.display = ID.mode === "dice" ? "" : "none";
   $("#idWcBox").style.display = ID.mode === "wildcards" ? "" : "none";
   $("#idBrief").style.display = ID.mode === "wildcards" ? "none" : "";
+  $("#idBrief").placeholder = ID.mode === "dice" ? "optional brief to keep a theme, e.g. underwater" : "brief, e.g. a lantern procession on a frozen lake";
+  $("#idHelp").innerHTML = ID_HELP[ID.mode] || ""; if (typeof idRunNote === "function") idRunNote();
+  if (ID.mode === "wildcards" && typeof WC !== "undefined" && !WC.rows.length && document.body.classList.contains("mode-ideas")) wcSearch().catch(() => {});
   $("#idDice").innerHTML = ID.dice.map(f => `<button data-d="${f}" class="${ID.on.includes(f) ? "on" : ""}">${f}</button>`).join("");
 }
 function idCard(r) {
@@ -1837,9 +1997,9 @@ function idCard(r) {
 async function idRun() {
   const st = await api("/api/ideas/status?since=0");
   if (st.running) { await api("/api/ideas/stop", {}); $("#idState").textContent = "stopping..."; return; }
-  const needModel = ID.mode !== "wildcards" || $("#idPolish").checked;
+  const needModel = true;
   if (needModel && $("#model").value === "__loaded__" && !(S.loaded || []).length) return toast("nothing is loaded in LM Studio - load a model there or pick one at the top", 5000);
-  await api("/api/ideas/start", {layout: layoutSpec(), trigger: $("#trigger").value.trim(), mode: ID.mode, brief: $("#idBrief").value.trim(), template: $("#idTemplate").value.trim(), polish: $("#idPolish").checked,
+  await api("/api/ideas/start", {layout: layoutSpec(), trigger: $("#trigger").value.trim(), mode: ID.mode, brief: $("#idBrief").value.trim(), template: $("#idTemplate").value.trim(),
     dice: ID.on, count: +$("#idCount").value || 8, temperature: +$("#idTemp").value || 1.0, seed: $("#idSeed").value.trim(),
     preset: $("#preset").value, model: $("#model").value, reasoning: $("#mode").value});
   ID.since = 0; idPoll();
@@ -1873,15 +2033,7 @@ function idWire() {
   $("#idPane .idtabs").onclick = e => { const b = e.target.closest("[data-idm]"); if (b) { ID.mode = b.dataset.idm; idRenderMode(); idSave(); } };
   $("#idDice").onclick = e => { const b = e.target.closest("[data-d]"); if (!b) return; const k = ID.on.indexOf(b.dataset.d);
     if (k >= 0) ID.on.splice(k, 1); else ID.on.push(b.dataset.d); idRenderMode(); idSave(); };
-  let t = null;
-  $("#idWcSearch").oninput = e => { clearTimeout(t); t = setTimeout(async () => {
-    const q = e.target.value.trim(); if (q.length < 2) { $("#idWcHits").innerHTML = ""; return; }
-    const d = await api(`/api/ideas/wildcards?q=${encodeURIComponent(q)}`);
-    $("#idWcHits").innerHTML = (d.hits.length ? d.hits.map(h => `<button data-wc="${esc(h)}" title="insert __${esc(h)}__">${esc(h)}</button>`).join("") : '<span class="muted">no match</span>') +
-      `<div class="muted" style="font-size:11px;width:100%">${d.total} wildcard files indexed</div>`; }, 250); };
-  $("#idWcHits").onclick = e => { const b = e.target.closest("[data-wc]"); if (!b) return; const ta = $("#idTemplate");
-    const ins = `__${b.dataset.wc}__`; const p = ta.selectionStart ?? ta.value.length; ta.value = ta.value.slice(0, p) + ins + ta.value.slice(p); ta.focus(); idSave(); };
-  ["#idBrief", "#idTemplate", "#idCount", "#idTemp", "#idPolish"].forEach(s => $(s).addEventListener("change", idSave));
+  ["#idBrief", "#idTemplate", "#idCount", "#idTemp"].forEach(s => $(s).addEventListener("change", idSave));
   $("#idRun").onclick = () => idRun().catch(fail);
   $("#idResults").onclick = e => { const c = e.target.closest("[data-icopy]"); if (c) navigator.clipboard.writeText(ID.results.find(x => x.n === +c.dataset.icopy).prompt).then(() => toast("copied")); };
   $("#idResults").onchange = e => { const k = e.target.dataset.ikeep; if (k) ID.results.find(x => x.n === +k).keep = e.target.checked; };
@@ -2146,7 +2298,7 @@ function rvWire() {
   for (const k of ["mImage", "mCaption", "mFolder", "mCombined", "autoSave", "dedupe", "sidecar", "recursive", "onlyNew", "useFacts", "factsEth"]) if (L[k] !== undefined) $("#" + k).checked = L[k];
   if (L.onExists) $$("input[name=onExists]").forEach(r => r.checked = r.value === L.onExists);
   wire();
-  lsWire(); pbWire(); idWire(); rwWire(); rnWire(); rvWire();
+  lsWire(); pbWire(); idWire(); idWire2(); rwWire(); rnWire(); rvWire();
   try { await loadState(); } catch (e) { fail(e); }
   refreshQueueLists().catch(fail);
   loadModels().catch(e => toast("⚠ LM Studio: " + e.message, 6000));
