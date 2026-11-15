@@ -227,15 +227,31 @@ class PhotobashJob:
                 if self.cancel.is_set():
                     break
                 try:
-                    images = pick_images(sources, rng)
-                    assignment = draw_assignment(sources, rng) if mode == "draw" else None
+                    fixed = spec.get("fixed") or {}
+                    if fixed.get("images"):                 # redo of one mix: same pictures, same aspect assignment
+                        images = list(fixed["images"])
+                        fa = fixed.get("assignment") or {}
+                        assignment = {f: int(i) - 1 for f, i in fa.items()} if (mode == "draw" and fa) else \
+                            (draw_assignment(sources, rng) if mode == "draw" else None)
+                    else:
+                        images = pick_images(sources, rng)
+                        assignment = draw_assignment(sources, rng) if mode == "draw" else None
                     note = " ".join(x for x in (directions_text(spec), spec.get("note", "")) if x)
                     msgs = build_messages(composed.system, composed.user, mode, sources, images, assignment, note)
                     extra = 4096 if mode_r not in ("off", "") and not mode_r.startswith("i") else 0
                     mt = int(spec.get("max_tokens") or 0) or preset.max_tokens
-                    r = client.chat(api_id, msgs, max_tokens=mt + extra, temperature=temp,
-                                    top_p=preset.top_p, seed=rng.randrange(1 << 30), reasoning=mode_r, caps=caps)
-                    text = (r.content or "").strip()
+                    from .generate import runaway
+                    flags = []
+                    for attempt in range(2):                # one silent retry when the model falls into a loop
+                        r = client.chat(api_id, msgs, max_tokens=mt + extra, temperature=temp,
+                                        top_p=preset.top_p, seed=rng.randrange(1 << 30), reasoning=mode_r, caps=caps)
+                        text = (r.content or "").strip()
+                        why = runaway(text) if preset.output != "json" else ""
+                        if not why:
+                            break
+                        flags = [why + (" - retried once, still bad: press redo" if attempt else "")]
+                    if not why:
+                        flags = []
                     if preset.output == "json":
                         text = extract_json(text)
                         if preset.layout:
@@ -257,7 +273,8 @@ class PhotobashJob:
                            "images": images, "weights": [s.get("weight", 50) for s in sources],
                            "takes": [s.get("take") or "everything" for s in sources],
                            "assignment": {f: i + 1 for f, i in (assignment or {}).items()},
-                           "tokens": getattr(r, "completion_tokens", None)}
+                           "tokens": getattr(r, "completion_tokens", None), "flags": flags,
+                           "replaces": fixed.get("replaces")}
                     with self.lock:
                         self.state["results"].append(res)
                 except Exception as exc:

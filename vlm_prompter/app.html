@@ -1907,6 +1907,18 @@ async function pbPreview() {
 }
 let pbPrevT = null;
 function pbPreviewSoon() { clearTimeout(pbPrevT); pbPrevT = setTimeout(() => pbPreview().catch(() => {}), 300); }
+async function pbRedo(n) {
+  const r = PB.results.find(x => x.n === n); if (!r) return;
+  const st = await api("/api/photobash/status?since=0"); if (st.running) return toast("a photobash run is going - redo when it is done");
+  const sources = r.images.map((p, i) => ({path: p, weight: r.weights[i], take: r.takes && r.takes[i] || "everything"}));
+  await api("/api/photobash/start", {sources, mode: r.mode, mixes: 1, temperature: +$("#pbTemp").value || 0.9, seed: "",
+    note: $("#pbNote").value.trim(), preset: r.preset || $("#preset").value, model: $("#model").value, reasoning: $("#mode").value,
+    avoid_text: $("#pbNoText").checked, avoid_marks: $("#pbNoMarks").checked, add_text: $("#pbAddText").value.trim(),
+    text_where: $("#pbTextWhere").value.trim(), max_tokens: +$("#pbMaxTok").value || 0, layout: layoutSpec(), trigger: $("#trigger").value.trim(),
+    fixed: {images: r.images, assignment: r.assignment || {}, replaces: n}});
+  const card = document.querySelector(`.pbr[data-n="${n}"] .pbtext`); if (card) card.style.opacity = .45;
+  toast(`redoing mix ${n}`); PB.since = 0; pbPoll();
+}
 function pbSummary() {
   const s = $("#pbSum"); if (!s) return;
   const parts = [$("#pbMode").value, `${+$("#pbMixes").value || 4} mixes`, `temp ${$("#pbTemp").value}`];
@@ -1948,6 +1960,8 @@ function pbRenderResults(append) {
       <div class="pbrh"><label><input type="checkbox" data-keep="${r.n}" ${r.keep ? "checked" : ""}> mix ${r.n}</label>
         <span class="pbsrc">${r.images.map((p, i) => `<img src="${thumb(p, 120)}" title="${esc(p)} - weight ${r.weights[i]}" alt="">`).join("")}</span>
         <span class="muted">${esc(r.mode)}${Object.keys(r.assignment || {}).length ? " · " + Object.entries(r.assignment).map(([f, n]) => `${f}:${n}`).join(" ") : ""}</span>
+        ${(r.flags || []).map(f => `<span class="rwbadge">${esc(f)}</span>`).join(" ")}
+        <button data-redo="${r.n}" title="Write this mix again: same pictures${Object.keys(r.assignment || {}).length ? " and aspect assignment" : ""}, new seed - replaces this card">redo</button>
         <button data-copy="${r.n}" title="Copy the prompt">copy</button></div>
       <div class="pbtext" contenteditable="true" data-edit="${r.n}">${esc(r.prompt)}</div>${rbar()}</div>`;
   if (!append) $("#pbResults").innerHTML = "";
@@ -1971,8 +1985,14 @@ async function pbPoll() {
     while (true) {
       const s = await api(`/api/photobash/status?since=${PB.since}`);
       if (s.results.length) { const known = new Set(PB.results.map(x => x.prompt));      // after a reload: skip ones we have
-        const fresh = s.results.filter(r => !known.has(r.prompt)); fresh.forEach(r => { r.keep = true; r.n = ++PB.seq; });
-        PB.results.push(...fresh); PB.since += s.results.length; if (fresh.length) pbRenderResults(fresh); resKeep("pb", PB.results); }
+        const fresh = s.results.filter(r => !known.has(r.prompt)); let replaced = false;
+        fresh.filter(r => r.replaces).forEach(r => { const old = PB.results.find(x => x.n === r.replaces);   // a redo: replace the card
+          if (old) { Object.assign(old, {...r, n: old.n, keep: old.keep, replaces: undefined}); replaced = true; } });
+        const added = fresh.filter(r => !r.replaces || !PB.results.some(x => x.n === r.replaces && x.prompt === r.prompt));
+        added.forEach(r => { r.keep = true; r.n = ++PB.seq; });
+        PB.results.push(...added); PB.since += s.results.length;
+        if (replaced) pbRenderResults(); else if (added.length) pbRenderResults(added);
+        resKeep("pb", PB.results); }
       $("#pbRun").textContent = s.running ? "■ Stop" : "Make mixes"; $("#pbRun").className = s.running ? "danger" : "primary";
       $("#pbState").textContent = s.total ? `${s.done || 0}/${s.total}${s.errors ? `, ${s.errors} errors` : ""}${s.running ? "" : " · done"}` : "";
       if (s.last_error) $("#pbState").title = s.last_error;
@@ -2026,6 +2046,8 @@ function pbWire() {
   api("/api/photobash/status?since=0").then(s => { if (s.running) { PB.since = 0; pbPoll(); } }).catch(() => {});
   $("#pbRun").onclick = () => pbRun().catch(fail);
   $("#pbResults").onclick = e => {
+    const rd = e.target.closest("[data-redo]");
+    if (rd) { pbRedo(+rd.dataset.redo).catch(fail); return; }
     const c = e.target.closest("[data-copy]"); if (c) { const r = PB.results.find(x => x.n === +c.dataset.copy); navigator.clipboard.writeText(r.prompt).then(() => toast("copied")); }
   };
   $("#pbResults").onchange = e => { const k = e.target.dataset.keep; if (k) { PB.results.find(x => x.n === +k).keep = e.target.checked; resKeep("pb", PB.results); } };

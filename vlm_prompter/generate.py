@@ -233,3 +233,29 @@ def generate_one(client: LMStudioClient, image_path: str, preset: Preset, compos
         cache.put(key, {"prompts": result.prompts, "stats": result.stats, "over_limit": result.over_limit,
                         "created": time.strftime("%Y-%m-%d %H:%M:%S"), **record_base})
     return result
+
+
+def runaway(text: str) -> str:
+    """'' if the text looks sane, else why it looks like a runaway repetition loop (Nov 15): a very long stretch of
+    words with no punctuation, or a long phrase repeated word for word."""
+    import re as _re
+    words = (text or "").split()
+    if len(words) < 120:
+        return ""
+    run = best = 0
+    for w in words:
+        if _re.search(r"[.,;:!?)\]\"]$", w):
+            run = 0
+        else:
+            run += 1
+            best = max(best, run)
+    if best >= 70:
+        return f"runaway text ({best} words without punctuation)"
+    low = [w.lower().strip(".,;:!?\"'") for w in words]
+    seen = set()
+    for i in range(len(low) - 9):
+        g = tuple(low[i:i + 10])
+        if g in seen:
+            return "runaway text (a long phrase repeats word for word)"
+        seen.add(g)
+    return ""
