@@ -466,7 +466,10 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
       <label>add text <input type="text" id="pbAddText" placeholder="exact text to show in the picture (optional)" style="width:240px"></label>
       <label>where <input type="text" id="pbTextWhere" placeholder="e.g. as a neon sign above the door" style="width:200px"></label>
     </div>
-    <textarea id="pbNote" rows="2" placeholder="optional direction, e.g. make it a winter night, keep it photographic"></textarea>
+    <div class="muted" style="font-size:12px;margin-top:4px">modifiers (same as Generate) - click to use, fill in the value where asked:</div>
+    <div class="pbfac" id="pbMods"></div>
+    <div id="pbModVals"></div>
+    <textarea id="pbNote" rows="2" placeholder="free direction, e.g. make it a winter night, keep it photographic"></textarea>
     <div class="pbopts" style="font-size:12.5px"><label title="0 = the preset's own limit">max tokens <input type="number" id="pbMaxTok" value="0" min="0" max="16000" step="100" style="width:80px"></label>
       <span class="muted">thinking mode: the Thinking menu at the top</span></div>
     <details id="pbPrevBox" open><summary>What the model is told <span class="muted" id="pbPrevMeta"></span></summary>
@@ -1895,13 +1898,24 @@ function layoutShow() {
   $("#lyBox").style.display = p && p.layout ? "" : "none";
 }
 
+function pbModsRender() {
+  PB.mods = PB.mods || {};
+  const skip = new Set(["add_text", "ignore_text", "ignore_watermarks"]);            // Photobash has its own controls for these
+  const list = (S.modifiers || []).filter(m => !skip.has(m.id));
+  $("#pbMods").innerHTML = list.map(m => `<button data-pm="${m.id}" class="${PB.mods[m.id]?.on ? "on" : ""}" title="${esc(m.text)}">${esc(m.name)}</button>`).join("");
+  $("#pbModVals").innerHTML = list.filter(m => m.takes_value && PB.mods[m.id]?.on).map(m =>
+    `<label class="setrow"><span>${esc(m.name)}</span><input type="text" data-pmv="${m.id}" value="${esc(PB.mods[m.id].value || "")}" placeholder="${m.id === "set_medium" ? "e.g. 35mm film photograph, gouache illustration" : "value"}"></label>`).join("");
+}
+function pbModsSpec() {
+  return Object.entries(PB.mods || {}).filter(([, v]) => v.on).map(([id, v]) => [id, v.value || ""]);
+}
 async function pbPreview() {
   if (!document.body.classList.contains("mode-photobash")) return;
   const tab = document.querySelector('.pbtab[data-pt="dir"]'); if (!tab || tab.style.display === "none") return;
   const sources = PB.slots.map(s => ({path: s.path, weight: s.weight, take: s.only.length ? s.only : "everything"}));
   const d = await api("/api/photobash/preview", {sources, mode: $("#pbMode").value, preset: $("#preset").value, note: $("#pbNote").value.trim(),
     avoid_text: $("#pbNoText").checked, avoid_marks: $("#pbNoMarks").checked, add_text: $("#pbAddText").value.trim(),
-    text_where: $("#pbTextWhere").value.trim(), max_tokens: +$("#pbMaxTok").value || 0});
+    text_where: $("#pbTextWhere").value.trim(), max_tokens: +$("#pbMaxTok").value || 0, mods: pbModsSpec()});
   $("#pbPrevSys").textContent = d.system; $("#pbPrevUser").textContent = d.user;
   $("#pbPrevMeta").textContent = `(preset ${d.preset}, max ${d.max_tokens} tokens${d.draw_example ? ", draw: one example assignment" : ""})`;
 }
@@ -1914,7 +1928,7 @@ async function pbRedo(n) {
   await api("/api/photobash/start", {sources, mode: r.mode, mixes: 1, temperature: +$("#pbTemp").value || 0.9, seed: "",
     note: $("#pbNote").value.trim(), preset: r.preset || $("#preset").value, model: $("#model").value, reasoning: $("#mode").value,
     avoid_text: $("#pbNoText").checked, avoid_marks: $("#pbNoMarks").checked, add_text: $("#pbAddText").value.trim(),
-    text_where: $("#pbTextWhere").value.trim(), max_tokens: +$("#pbMaxTok").value || 0, layout: layoutSpec(), trigger: $("#trigger").value.trim(),
+    text_where: $("#pbTextWhere").value.trim(), max_tokens: +$("#pbMaxTok").value || 0, mods: pbModsSpec(), layout: layoutSpec(), trigger: $("#trigger").value.trim(),
     fixed: {images: r.images, assignment: r.assignment || {}, replaces: n}});
   const card = document.querySelector(`.pbr[data-n="${n}"] .pbtext`); if (card) card.style.opacity = .45;
   toast(`redoing mix ${n}`); PB.since = 0; pbPoll();
@@ -1926,16 +1940,18 @@ function pbSummary() {
   if ($("#pbNoText").checked) parts.push("no text");
   if ($("#pbNoMarks").checked) parts.push("no marks");
   const at = $("#pbAddText").value.trim(); if (at) parts.push(`text: "${at.length > 24 ? at.slice(0, 24) + "..." : at}"`);
+  const mods = pbModsSpec().filter(([id, v]) => { const m = (S.modifiers || []).find(x => x.id === id); return m && (!m.takes_value || v.trim()); });
+  if (mods.length) parts.push(mods.map(([id, v]) => { const m = S.modifiers.find(x => x.id === id); return v ? `${m.name.toLowerCase()}: ${v.length > 18 ? v.slice(0, 18) + "..." : v}` : m.name.toLowerCase(); }).join(", "));
   if ($("#pbNote").value.trim()) parts.push("+ note");
   s.textContent = parts.join(" \u00b7 ");
 }
 function pbSave() { try { localStorage.setItem("vlmp.pb", JSON.stringify({slots: PB.slots, mode: $("#pbMode").value, mixes: $("#pbMixes").value, temp: $("#pbTemp").value, note: $("#pbNote").value,
-  noText: $("#pbNoText").checked, noMarks: $("#pbNoMarks").checked, addText: $("#pbAddText").value, textWhere: $("#pbTextWhere").value})); } catch {} }
+  noText: $("#pbNoText").checked, noMarks: $("#pbNoMarks").checked, addText: $("#pbAddText").value, textWhere: $("#pbTextWhere").value, mods: PB.mods || {}})); } catch {} }
 function pbLoad() {
   try { const d = JSON.parse(localStorage.getItem("vlmp.pb") || "{}"); PB.slots = d.slots || [];
     if (d.mode) $("#pbMode").value = d.mode; if (d.mixes) $("#pbMixes").value = d.mixes; if (d.temp) $("#pbTemp").value = d.temp; if (d.note) $("#pbNote").value = d.note;
     if (d.noText !== undefined) $("#pbNoText").checked = d.noText; if (d.noMarks !== undefined) $("#pbNoMarks").checked = d.noMarks;
-    if (d.addText) $("#pbAddText").value = d.addText; if (d.textWhere) $("#pbTextWhere").value = d.textWhere; } catch {}
+    if (d.addText) $("#pbAddText").value = d.addText; if (d.textWhere) $("#pbTextWhere").value = d.textWhere; PB.mods = d.mods || {}; } catch {}
 }
 function pbAdd(path, isFolder) {
   if (PB.slots.length >= 4) return toast("photobash takes up to 4 sources");
@@ -1976,7 +1992,7 @@ async function pbRun() {
   await api("/api/photobash/start", {layout: layoutSpec(), trigger: $("#trigger").value.trim(), sources, mode: $("#pbMode").value, mixes: +$("#pbMixes").value || 4, temperature: +$("#pbTemp").value || 0.9,
     seed: $("#pbSeed").value.trim(), note: $("#pbNote").value.trim(), preset: $("#preset").value, model: $("#model").value, reasoning: $("#mode").value,
     avoid_text: $("#pbNoText").checked, avoid_marks: $("#pbNoMarks").checked, add_text: $("#pbAddText").value.trim(), text_where: $("#pbTextWhere").value.trim(),
-    max_tokens: +$("#pbMaxTok").value || 0});
+    max_tokens: +$("#pbMaxTok").value || 0, mods: pbModsSpec()});
   PB.since = 0; pbPoll();                                 // results accumulate; "clear results" empties
 }
 async function pbPoll() {
@@ -2039,6 +2055,11 @@ function pbWire() {
   ["#pbMode", "#pbMixes", "#pbTemp", "#pbNote", "#pbNoText", "#pbNoMarks", "#pbAddText", "#pbTextWhere", "#pbSeed"].forEach(s => {
     $(s).addEventListener("change", () => { pbSave(); pbSummary(); pbPreviewSoon(); }); $(s).addEventListener("input", () => { pbSummary(); pbPreviewSoon(); }); });
   $("#pbMaxTok").addEventListener("input", pbPreviewSoon); $("#preset").addEventListener("change", pbPreviewSoon);
+  setTimeout(pbModsRender, 900);                     // S.modifiers arrives with the app state
+  $("#pbMods").onclick = e => { const b = e.target.closest("[data-pm]"); if (!b) return; PB.mods = PB.mods || {};
+    const m = PB.mods[b.dataset.pm] = PB.mods[b.dataset.pm] || {on: false, value: ""}; m.on = !m.on;
+    pbModsRender(); pbSave(); pbSummary(); pbPreviewSoon(); };
+  $("#pbModVals").addEventListener("input", e => { const id = e.target.dataset.pmv; if (!id) return; PB.mods[id].value = e.target.value; pbSave(); pbSummary(); pbPreviewSoon(); });
   $("#pbTabs").addEventListener("click", () => setTimeout(pbPreviewSoon, 50));
   $("#pbSlots").addEventListener("click", () => setTimeout(pbPreviewSoon, 50)); $("#pbSlots").addEventListener("change", pbPreviewSoon);
   pbSummary();

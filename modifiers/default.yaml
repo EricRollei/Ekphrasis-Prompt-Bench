@@ -14,6 +14,12 @@
 - id: change_style
   name: Change style
   text: "Keep the content and composition, but write the prompt for this style instead: {value}."
+- id: set_medium
+  name: Medium
+  text: "The picture's medium is: {value}. Describe it as that medium throughout - its materials, surface and rendering - whatever the medium of the source image."
+- id: omit_medium
+  name: Omit medium words
+  text: "Do not name the medium or media type anywhere in the prompt (no photograph, photo, painting, illustration, drawing, render, film still, print) and no camera, lens or brush terms; describe only what is visible in the scene."
 - id: change_setting
   name: Change setting
   text: "Move the scene to this setting: {value}. Keep the subjects, poses and mood."

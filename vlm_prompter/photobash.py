@@ -140,6 +140,28 @@ def directions_text(spec: Dict[str, Any]) -> str:
     return " ".join(out)
 
 
+def mods_text(spec: Dict[str, Any]) -> str:
+    """Modifier chips chosen in the Instructions tab -> text for the model ('the image' reads 'the new picture')."""
+    from .instructions import load_modifiers
+    chosen = spec.get("mods") or []
+    if not chosen:
+        return ""
+    known = load_modifiers(config.MODIFIERS_DIR)
+    out = []
+    for item in chosen:
+        mid, value = (item[0], item[1] if len(item) > 1 else "") if isinstance(item, (list, tuple)) else (item, "")
+        m = known.get(mid)
+        if not m or (m.takes_value and not str(value).strip()):
+            continue
+        t = m.text.replace("{value}", str(value).strip())
+        for a, b in (("of the source image", "of the source pictures"), ("source image", "source pictures"),
+                     ("the image shows", "the pictures show"), ("of the image", "of the new picture"),
+                     ("in the image", "in the new picture"), ("the image", "the new picture")):
+            t = t.replace(a, b)
+        out.append(t)
+    return " ".join(out)
+
+
 def build_messages(preset_system: str, preset_user: str, mode: str, sources: List[Dict[str, Any]],
                    images: List[str], assignment: Optional[Dict[str, int]], note: str = "",
                    image_url=None) -> List[Dict[str, Any]]:
@@ -236,7 +258,7 @@ class PhotobashJob:
                     else:
                         images = pick_images(sources, rng)
                         assignment = draw_assignment(sources, rng) if mode == "draw" else None
-                    note = " ".join(x for x in (directions_text(spec), spec.get("note", "")) if x)
+                    note = " ".join(x for x in (directions_text(spec), mods_text(spec), spec.get("note", "")) if x)
                     msgs = build_messages(composed.system, composed.user, mode, sources, images, assignment, note)
                     extra = 4096 if mode_r not in ("off", "") and not mode_r.startswith("i") else 0
                     mt = int(spec.get("max_tokens") or 0) or preset.max_tokens
@@ -338,7 +360,7 @@ def preview(settings: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, Any]:
         [{"path": "picture-1", "weight": 50}, {"path": "picture-2", "weight": 50}]
     mode = spec.get("mode") if spec.get("mode") in ("blend", "draw") else "blend"
     assignment = draw_assignment(sources, random.Random(0)) if mode == "draw" else None
-    note = " ".join(x for x in (directions_text(spec), spec.get("note", "")) if x)
+    note = " ".join(x for x in (directions_text(spec), mods_text(spec), spec.get("note", "")) if x)
     msgs = build_messages(composed.system, composed.user, mode, sources, [s["path"] for s in sources], assignment,
                           note, image_url=lambda p: "")
     user = []
