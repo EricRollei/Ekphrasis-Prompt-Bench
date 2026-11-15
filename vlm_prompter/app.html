@@ -246,6 +246,13 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
 #settings h3 { margin:16px 0 6px; font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
 .setrow { display:grid; grid-template-columns:200px 1fr; gap:10px; align-items:center; margin:4px 0; font-size:13px; }
 .setrow input[type=text], .setrow select { width:100%; }
+
+.rbtn.busy { background:var(--accent); color:#fff; border-color:var(--accent); animation:rpulse 1.2s ease-in-out infinite; }
+#rState.rbusy { background:var(--accent); color:#fff; padding:3px 10px; border-radius:12px; font-weight:600; animation:rpulse 1.2s ease-in-out infinite; }
+#rState.rbusy a { color:#fff; text-decoration:underline; margin-left:4px; }
+@keyframes rpulse { 0%, 100% { opacity:1; } 50% { opacity:.65; } }
+.pbmini { width:110px; height:110px; display:grid; grid-template-columns:1fr 1fr; gap:2px; }
+.pbmini img { width:54px !important; height:54px !important; object-fit:cover; border-radius:3px; }
 </style>
 </head>
 <body>
@@ -419,6 +426,7 @@ body.mode-rewrite .layout { grid-template-columns:1fr; }
     <div class="pbadd">
       <button id="pbAddSel" title="Add the images selected in the gallery as sources">+ selected images</button>
       <button id="pbAddFolder" title="Add the folder open in the gallery as a POOL: each mix draws a random image from it">+ this folder as pool</button>
+      <button id="pbAddSelPool" title="The images selected in the gallery become ONE source: each mix draws one of them at random (a hand-picked subset of a folder - no new folder needed)">+ selection as one pool</button>
       <button id="pbClear">clear sources</button>
     </div>
     <div id="pbSlots"></div>
@@ -589,7 +597,18 @@ async function api(path, body) {
   if (!r.ok || data.error) throw new Error(data.error || `HTTP ${r.status}`);
   return data;
 }
-function toast(msg, ms = 2600) { const t = $("#toast"); t.textContent = msg; t.style.display = "block"; clearTimeout(toast.h); toast.h = setTimeout(() => t.style.display = "none", ms); }
+document.addEventListener("pointerdown", e => { toast.at = {x: e.clientX, y: e.clientY, t: Date.now()}; }, true);
+function toast(msg, ms = 2600) {
+  const t = $("#toast"); t.textContent = msg; t.style.display = "block";
+  const a = toast.at;                                  // show it where the user is working (last click, < 30 s ago)
+  if (a && Date.now() - a.t < 30000) {
+    const w = Math.min(t.offsetWidth || 300, window.innerWidth * 0.8), h = t.offsetHeight || 32;
+    t.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, a.x - w / 2)) + "px";
+    t.style.top = Math.max(8, Math.min(window.innerHeight - h - 8, a.y + 22)) + "px";
+    t.style.bottom = "auto"; t.style.transform = "none";
+  } else { t.style.left = "50%"; t.style.top = "auto"; t.style.bottom = "16px"; t.style.transform = "translateX(-50%)"; }
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.style.display = "none", ms);
+}
 function fail(e) { console.error(e); toast("⚠ " + (e.message || e), 5000); }
 
 const S = { presets: [], modifiers: [], mods: {}, queue: [], browse: null, view: [], queued: new Set(), sel: new Set(), last: -1,
@@ -1150,7 +1169,8 @@ function wire() {
   $("#path").onkeydown = e => { if (e.key === "Enter") goPath(); };
   $("#path").addEventListener("paste", () => setTimeout(goPath, 0));
   $("#dirs").onclick = e => { const f = e.target.closest(".f"); if (!f) return; if (f.dataset.home) showHome(); else browse(f.dataset.p).catch(fail); };
-  $("#addFolder").onclick = async () => { if (!S.browse) return toast("open a folder first"); const d = await api("/api/expand", {paths: [S.browse.path], recursive: $("#recursive").checked}); if (!d.items.length) return toast("no images found"); addItems(d.items); };
+  $("#addFolder").onclick = async () => { if (!S.browse) return toast("open a folder first");
+    if (document.body.classList.contains("mode-photobash")) { $("#pbAddFolder").click(); return; } const d = await api("/api/expand", {paths: [S.browse.path], recursive: $("#recursive").checked}); if (!d.items.length) return toast("no images found"); addItems(d.items); };
   $("#cards").onclick = clickCard;
   $("#cards").ondblclick = e => { const c = e.target.closest(".card"); if (c) showImage(fullPath(+c.dataset.i)); };
   $("#grid").addEventListener("scroll", () => { if (!G.raf) G.raf = requestAnimationFrame(() => { G.raf = 0; layoutGrid(false); }); });
@@ -1158,7 +1178,9 @@ function wire() {
   $("#filter").oninput = () => { S.last = -1; applyFilter(); $("#grid").scrollTop = 0; layoutGrid(true); };
   $("#selAll").onclick = () => { S.view.forEach(i => S.sel.add(i)); paintSel(); };
   $("#selNone").onclick = () => { S.sel.clear(); paintSel(); };
-  $("#addSel").onclick = () => { const root = S.browse.path; addItems([...S.sel].sort((a, b) => a - b).map(i => ({image: fullPath(i), root}))); S.sel.clear(); renderGrid(); };
+  $("#addSel").onclick = () => {
+    if (document.body.classList.contains("mode-photobash")) { $("#pbAddSel").click(); return; }   // Photobash: sources, not the queue
+    const root = S.browse.path; addItems([...S.sel].sort((a, b) => a - b).map(i => ({image: fullPath(i), root}))); S.sel.clear(); renderGrid(); };
   $("#tw").oninput = () => { layoutGrid(true); saveLocal(); };
   $$(".tabs .tab").forEach(b => b.onclick = () => {
     $$(".tabs .tab").forEach(x => x.classList.toggle("on", x === b));
@@ -1223,6 +1245,10 @@ const R = { defects: [], sweeps: [], folders: [], src: null, data: null, rows: [
 function setMode(mode) {
   document.body.classList.toggle("mode-review", mode === "review");
   document.body.classList.toggle("mode-photobash", mode === "photobash");
+  const pbm = mode === "photobash";                    // gallery buttons say where things go
+  $("#addSel").textContent = pbm ? "+ Add selected as sources" : "+ Add selected";
+  $("#addFolder").textContent = pbm ? "+ Add this folder as a pool" : "+ Add this folder to queue";
+  $("#addFolder").title = pbm ? "Add the folder as a Photobash pool (random image per mix)" : "Put every image in the current folder into the queue";
   document.body.classList.toggle("mode-ideas", mode === "ideas");
   document.body.classList.toggle("mode-rewrite", mode === "rewrite");
   $$(".modes button").forEach(b => b.classList.toggle("on", b.dataset.mode === mode));
@@ -1441,7 +1467,7 @@ async function rvRefreshChecks() {
   R.data.cells.forEach((c, i) => { const n = by.get(c.file); if (JSON.stringify(n) !== JSON.stringify(c.check)) { c.check = n; rvUpdateCard(i); if (i === R.cur) rvRenderDetail(); } });
 }
 // ---------------------------------------------------------------- Render (ComfyUI) + Settings page
-const RN = {presets: [], workflows: [], strips: {}, polling: false, since: 0};
+const RN = {presets: [], workflows: [], strips: {}, polling: false, since: 0, active: new Set()};
 const rbar = () => `<div class="rbar"><button class="rbtn" title="Render this prompt with the render preset chosen at the top (ComfyUI)">&#9654; render</button><span class="rstrip"></span></div>`;
 const normText = t => (t || "").split(/\s+/).filter(Boolean).join(" ");
 function rbarText(bar) { const el = bar.previousElementSibling; return el ? (el.tagName === "TEXTAREA" ? el.value : el.innerText) : ""; }
@@ -1449,6 +1475,8 @@ function rnThumb(r) { return `<a href="/thumb?side=2400&path=${encodeURIComponen
 function rnPaint() {                                  // fill every visible strip from RN.strips (keyed by normalised text)
   document.querySelectorAll(".rbar").forEach(bar => {
     const list = RN.strips[normText(rbarText(bar))] || [];
+    const btn = bar.querySelector(".rbtn"), busy = RN.active.has(normText(rbarText(bar)));
+    if (btn.classList.contains("busy") !== busy) { btn.classList.toggle("busy", busy); btn.innerHTML = busy ? "&#8987; rendering&hellip;" : "&#9654; render"; }
     const s = bar.querySelector(".rstrip"); const html = list.slice().reverse().map(rnThumb).join("");
     if (s.dataset.n !== String(list.length)) { s.innerHTML = html; s.dataset.n = String(list.length); }
   });
@@ -1470,6 +1498,7 @@ async function rnStart(items) {
   if (!$("#rPreset").value) { rnOpenSettings(); return toast("make a render preset first (Settings > Render presets)"); }
   const lp = (S.presets || []).find(x => x.id === $("#preset").value);
   await api("/api/render/start", {preset: $("#rPreset").value, items: items.map(t => ({text: t}))});
+  items.forEach(t => RN.active.add(normText(t))); rnPaint();
   rnPoll();
 }
 async function rnPoll() {
@@ -1477,9 +1506,12 @@ async function rnPoll() {
   try {
     while (true) {
       const s = await api(`/api/render/status?since=${RN.since}`);
-      s.results.forEach(r => { const k = normText(r.prompt); (RN.strips[k] = RN.strips[k] || []).push(r); });
+      s.results.forEach(r => { const k = normText(r.prompt); (RN.strips[k] = RN.strips[k] || []).push(r); RN.active.delete(k); });
       RN.since += s.results.length; if (s.results.length) rnPaint();
-      $("#rState").textContent = s.running ? `${s.phase || ""} ${s.done || 0}/${s.total || 0}` : (s.total ? `rendered ${s.done}/${s.total}${s.errors ? `, ${s.errors} errors` : ""}` : "");
+      $("#rState").innerHTML = s.running ? `&#8987; ${esc(s.phase || "rendering")} ${s.done || 0}/${s.total || 0} <a href="#" id="rStop" title="Stop after the current image">stop</a>`
+        : (s.total ? `rendered ${s.done}/${s.total}${s.errors ? `, ${s.errors} errors` : ""}` : "");
+      $("#rState").classList.toggle("rbusy", !!s.running);
+      if (!s.running) { RN.active.clear(); rnPaint(); }
       $("#rState").title = s.last_error || ""; if (!s.running && s.last_error) toast(s.last_error, 9000);
       if (!s.running) break;
       await new Promise(r => setTimeout(r, 1500));
@@ -1549,6 +1581,7 @@ function rnShowPreset() {
 function rnWire() {
   rnLoadState().catch(() => {});
   $("#rBtnSettings").onclick = () => rnOpenSettings().catch(fail);
+  $("#rState").addEventListener("click", e => { if (e.target.id === "rStop") { e.preventDefault(); api("/api/render/stop", {}).then(() => toast("stopping after the current image")).catch(fail); } });
   document.addEventListener("click", e => {          // the Settings overlay sits after this script in the page
     if (e.target.id === "setClose" || e.target.id === "settings") $("#settings").style.display = "none"; });
   document.addEventListener("click", e => {
@@ -1778,9 +1811,9 @@ function pbAdd(path, isFolder) {
 }
 function pbRenderSlots() {
   $("#pbSlots").innerHTML = PB.slots.length ? PB.slots.map((s, i) => `<div class="pbslot" data-i="${i}">
-      <div class="pbthumb">${s.folder ? '<div class="pbfolder">pool</div>' : `<img src="${thumb(s.path, 200)}" alt="">`}</div>
+      <div class="pbthumb">${s.files ? `<div class="pbmini">${s.files.slice(0, 4).map(f => `<img src="${thumb(f, 110)}" alt="">`).join("")}</div>` : s.folder ? '<div class="pbfolder">pool</div>' : `<img src="${thumb(s.path, 200)}" alt="">`}</div>
       <div class="pbbody">
-        <div class="pbpath" title="${esc((s.folders || [s.path]).join("\n"))}">${i + 1}. ${s.folder ? esc((s.folders || [s.path]).map(f => f.split(/[\\/]/).pop()).join(" + ")) + ' <span class="muted">(random image per mix from ' + ((s.folders || [s.path]).length > 1 ? "these folders" : "this folder") + ')</span>' : esc(s.path.split(/[\\/]/).pop())}</div>
+        <div class="pbpath" title="${esc((s.files || s.folders || [s.path]).join("\n"))}">${i + 1}. ${s.files ? `pool of ${s.files.length} selected images <span class="muted">(random one per mix)</span>` : s.folder ? esc((s.folders || [s.path]).map(f => f.split(/[\\/]/).pop()).join(" + ")) + ' <span class="muted">(random image per mix from ' + ((s.folders || [s.path]).length > 1 ? "these folders" : "this folder") + ')</span>' : esc(s.path.split(/[\\/]/).pop())}</div>
         ${s.folder ? `<button data-addf="${i}" style="font-size:11.5px;padding:1px 7px" title="Add the folder open in the gallery to this pool">+ add the gallery's folder</button>` : ""}
         <div class="pbw">weight <input type="range" min="0" max="100" value="${s.weight}" data-w="${i}"> <span>${s.weight}</span>
           <button data-rm="${i}" title="Remove this source" style="margin-left:auto">✕</button></div>
@@ -1804,7 +1837,7 @@ async function pbRun() {
   if (st.running) { await api("/api/photobash/stop", {}); $("#pbState").textContent = "stopping after this mix..."; return; }
   if (PB.slots.length < 2) return toast("add at least two sources");
   if ($("#model").value === "__loaded__" && !(S.loaded || []).length) return toast("nothing is loaded in LM Studio - load a model there or pick one at the top", 5000);
-  const sources = PB.slots.map(s => ({path: s.path, paths: s.folder ? (s.folders || [s.path]) : undefined, weight: s.weight, take: s.only.length ? s.only : "everything"}));
+  const sources = PB.slots.map(s => ({path: s.path, paths: s.files ? s.files : s.folder ? (s.folders || [s.path]) : undefined, weight: s.weight, take: s.only.length ? s.only : "everything"}));
   await api("/api/photobash/start", {layout: layoutSpec(), trigger: $("#trigger").value.trim(), sources, mode: $("#pbMode").value, mixes: +$("#pbMixes").value || 4, temperature: +$("#pbTemp").value || 0.9,
     seed: $("#pbSeed").value.trim(), note: $("#pbNote").value.trim(), preset: $("#preset").value, model: $("#model").value, reasoning: $("#mode").value,
     avoid_text: $("#pbNoText").checked, avoid_marks: $("#pbNoMarks").checked, add_text: $("#pbAddText").value.trim(), text_where: $("#pbTextWhere").value.trim()});
@@ -1844,6 +1877,12 @@ function pbWire() {
     [...S.sel].sort((a, b) => a - b).forEach(i => pbAdd(fullPath(i), false)); pbRenderSlots(); pbSave(); };
   $("#pbAddFolder").onclick = () => { if (!S.browse || !S.browse.path) return toast("open a folder in the gallery first"); pbAdd(S.browse.path, true); pbRenderSlots(); pbSave(); };
   $("#pbClear").onclick = () => { PB.slots = []; pbRenderSlots(); pbSave(); };
+  $("#pbAddSelPool").onclick = () => {
+    if (S.sel.size < 2) return toast("select at least two images in the gallery (Ctrl / Shift click)");
+    if (PB.slots.length >= 4) return toast("photobash takes up to 4 sources");
+    const files = [...S.sel].sort((a, b) => a - b).map(i => fullPath(i));
+    PB.slots.push({path: files[0], files, weight: 50, only: []}); pbRenderSlots(); pbSave();
+    toast(`one source: random pick from ${files.length} images`); };
   $("#pbSlots").oninput = e => { const w = e.target.dataset.w; if (w !== undefined) { PB.slots[+w].weight = +e.target.value; e.target.nextElementSibling.textContent = e.target.value; pbSave(); } };
   $("#pbSlots").onclick = e => {
     const rm = e.target.closest("[data-rm]"); if (rm) { PB.slots.splice(+rm.dataset.rm, 1); pbRenderSlots(); pbSave(); return; }

@@ -105,11 +105,15 @@ def pick_images(sources: List[Dict[str, Any]], rng: random.Random) -> List[str]:
     from .images import is_image
     out = []
     for s in sources:
-        folders = [f for f in (s.get("paths") or [s["path"]]) if os.path.isdir(f)]
-        if folders:
+        paths = s.get("paths") or [s["path"]]
+        folders = [f for f in paths if os.path.isdir(f)]
+        files = [f for f in paths if os.path.isfile(f)] if len(paths) > 1 or folders else []
+        if folders or files:
             pools = s.get("_pools")
-            if pools is None:                      # per folder, so a big folder does not drown a small one
+            if pools is None:                      # per folder, so a big folder does not drown a small one;
                 pools = s["_pools"] = [sorted(os.path.join(f, n) for n in os.listdir(f) if is_image(n)) for f in folders]
+                if files:                          # a hand-picked selection counts as one more pool
+                    pools.append(sorted(files))
                 pools[:] = [pl for pl in pools if pl]
             if not pools:
                 raise ValueError(f"no images in {', '.join(folders)}")
