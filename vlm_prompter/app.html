@@ -306,6 +306,26 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
              border-radius:8px; padding:8px 10px 10px; display:flex; flex-direction:column; gap:8px; }
 .idsec.setupband { padding:10px 12px 12px; margin:4px 0; }
 .setupbar { background:var(--accent-soft) !important; border-bottom:2px solid var(--divider); }
+
+/* Nov 15: panel tabs drawn as folder tabs; the active one joins the tinted panel below it */
+.ftabs { display:flex !important; gap:4px; padding:6px 10px 0 !important; background:transparent !important;
+         border-bottom:2px solid var(--accent) !important; }
+.ftabs button, .ftabs .tab { font-size:14px !important; font-weight:600 !important; padding:7px 16px 6px !important;
+         border:1px solid var(--line) !important; border-bottom:none !important; border-radius:9px 9px 0 0 !important;
+         background:var(--soft) !important; color:var(--muted) !important; margin-bottom:-2px; box-shadow:none !important; }
+.ftabs button:hover, .ftabs .tab:hover { color:var(--fg) !important; }
+.ftabs button.on, .ftabs .tab.on { background:var(--accent-soft) !important; color:var(--fg) !important;
+         border-color:var(--accent) !important; border-bottom:2px solid var(--accent-soft) !important; position:relative; z-index:1; }
+#pane-queue .tools, #pane-instr, #pane-save { background:var(--accent-soft); }
+#pbPane .ftabs { padding:6px 0 0 !important; }
+#pbPane .pbband { border-top:none; border-radius:0 0 8px 8px; margin-top:-2px; }
+#pbPane #pbTabs { margin-bottom:0 !important; } #pbPane { row-gap:0; } #pbPane > .setupband + * { margin-top:10px; }
+.idleft .idsec.setupband + .idsec.setupband { margin-top:8px; }
+
+#pbNote { width:100%; box-sizing:border-box; min-height:3.4em; resize:vertical; font-size:13.5px; }
+#pbAddText { width:300px !important; } #pbTextWhere { width:260px !important; }
+
+.setupband .pbrun { background:transparent; }
 </style>
 </head>
 <body>
@@ -487,7 +507,7 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
           <div id="idRolls"></div>
         </div>
       </section>
-      <section class="idsec">
+      <section class="idsec setupband">
         <h3>2 &middot; Run</h3>
         <div class="pbopts">
           <label>how many <input type="number" id="idCount" value="8" min="1" max="500" style="width:70px"></label>
@@ -497,7 +517,7 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
         <div class="muted" id="idRunNote" style="font-size:12px;margin:4px 0 8px"></div>
         <div class="pbrun"><button class="primary" id="idRun">Make ideas</button><button id="idClearRes" title="Empty the results list">clear results</button><span class="muted" id="idState"></span></div>
       </section>
-      <section class="idsec">
+      <section class="idsec setupband">
         <h3>3 &middot; Save list</h3>
         <div id="idSaveBox"></div>
       </section>
@@ -516,8 +536,8 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
       <b>Photobash</b>
       <span class="muted">several pictures → one new picture, written for the preset chosen at the top</span>
     </div>
-    <div class="setupband">
-    <div class="idtabs" id="pbTabs"><button data-pt="src">Sources</button><button data-pt="dir">Instructions</button><button data-pt="save">Save</button></div>
+    <div class="ftabs" id="pbTabs"><button data-pt="src">&#9638; Sources</button><button data-pt="dir">&#9998; Instructions</button><button data-pt="save">&#10515; Save</button></div>
+    <div class="setupband pbband">
     <div class="pbopts pbbasics">
       <label title="blend: the model fuses all sources at once, weights say how strongly each shapes the result.&#10;draw: for each mix every aspect (subject, setting, light ...) is drawn from one source with probability = weight - many mixes give many combinations">mode
         <select id="pbMode"><option value="blend">blend</option><option value="draw">draw</option></select></label>
@@ -581,10 +601,10 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
       <div class="bar"><div id="bar"></div></div>
       <span class="progress" id="progress">ready</span>
     </div>
-    <div class="tabs">
-      <button class="tab on" data-tab="queue">Queue <span class="n" id="qCount"></span></button>
-      <button class="tab" data-tab="instr">Instructions</button>
-      <button class="tab" data-tab="save">Save</button>
+    <div class="tabs ftabs">
+      <button class="tab on" data-tab="queue">&#9776; Queue <span class="n" id="qCount"></span></button>
+      <button class="tab" data-tab="instr">&#9998; Instructions</button>
+      <button class="tab" data-tab="save">&#10515; Save</button>
     </div>
 
     <div class="pane on" id="pane-queue">
