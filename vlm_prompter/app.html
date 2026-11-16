@@ -326,6 +326,9 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
 #pbAddText { width:300px !important; } #pbTextWhere { width:260px !important; }
 
 .setupband .pbrun { background:transparent; }
+
+.pbpoolbtns { display:flex; flex-wrap:wrap; gap:4px; margin:2px 0; }
+.pbpoolbtns button { font-size:11.5px; padding:1px 7px; }
 </style>
 </head>
 <body>
@@ -2148,12 +2151,49 @@ function pbAdd(path, isFolder) {
   if (PB.slots.some(s => s.path.toLowerCase() === path.toLowerCase())) return;
   PB.slots.push({path, folder: !!isFolder, weight: 50, only: []});
 }
+// ---------------------------------------------------------------- Photobash pools: folders + cherry-picked images (Nov 16)
+function pbSlotThumb(s) {
+  const fs = s.files || [];
+  if (fs.length) return `<div class="pbmini">${fs.slice(-4).map(f => `<img src="${thumb(f, 110)}" alt="">`).join("")}</div>`;
+  return s.folder ? '<div class="pbfolder">pool</div>' : `<img src="${thumb(s.path, 200)}" alt="">`;
+}
+function pbSlotLabel(s) {
+  const base = p => p.split(/[\\/]/).pop();
+  const folders = s.folder ? (s.folders || [s.path]) : [], files = s.files || [];
+  if (!folders.length && !files.length) return esc(base(s.path));
+  const parts = [];
+  if (folders.length) parts.push(esc(folders.map(base).join(" + ")));
+  if (files.length) parts.push(`${files.length} picked image${files.length > 1 ? "s" : ""}`);
+  return `pool: ${parts.join(" + ")} <span class="muted">(random image per mix${folders.length && files.length ? "; each folder and the picked set get an equal chance" : ""})</span>`;
+}
+function pbPoolPaths(s) {
+  return s.folder ? [...(s.folders || [s.path]), ...(s.files || [])] : (s.files || undefined);
+}
+function pbAddSelectedTo(i) {
+  const s = PB.slots[i];
+  const sel = [...S.sel].sort((a, b) => a - b).map(k => fullPath(k));
+  if (!sel.length) return toast("select images in the gallery first (Ctrl / Shift click), then press this again");
+  if (!s.folder && !s.files) s.files = [s.path];            // a single image becomes a pool of itself + the picks
+  s.files = s.files || [];
+  const have = new Set(s.files.map(f => f.toLowerCase()));
+  const add = sel.filter(f => !have.has(f.toLowerCase()));
+  s.files.push(...add); s.lastAdd = add;
+  pbRenderSlots(); pbSave();
+  toast(add.length ? `added ${add.length} image(s) to source ${i + 1}${sel.length > add.length ? ` (${sel.length - add.length} already in it)` : ""}` : "those images are already in this source");
+}
+function pbUndoAdd(i) {
+  const s = PB.slots[i], rm = new Set((s.lastAdd || []).map(f => f.toLowerCase()));
+  s.files = (s.files || []).filter(f => !rm.has(f.toLowerCase())); s.lastAdd = null;
+  if (!s.files.length) delete s.files;
+  else if (!s.folder && s.files.length === 1) { s.path = s.files[0]; delete s.files; }   // back to a single image
+  pbRenderSlots(); pbSave();
+}
 function pbRenderSlots() {
   $("#pbSlots").innerHTML = PB.slots.length ? PB.slots.map((s, i) => `<div class="pbslot" data-i="${i}">
-      <div class="pbthumb">${s.files ? `<div class="pbmini">${s.files.slice(0, 4).map(f => `<img src="${thumb(f, 110)}" alt="">`).join("")}</div>` : s.folder ? '<div class="pbfolder">pool</div>' : `<img src="${thumb(s.path, 200)}" alt="">`}</div>
+      <div class="pbthumb">${pbSlotThumb(s)}</div>
       <div class="pbbody">
-        <div class="pbpath" title="${esc((s.files || s.folders || [s.path]).join("\n"))}">${i + 1}. ${s.files ? `pool of ${s.files.length} selected images <span class="muted">(random one per mix)</span>` : s.folder ? esc((s.folders || [s.path]).map(f => f.split(/[\\/]/).pop()).join(" + ")) + ' <span class="muted">(random image per mix from ' + ((s.folders || [s.path]).length > 1 ? "these folders" : "this folder") + ')</span>' : esc(s.path.split(/[\\/]/).pop())}</div>
-        ${s.folder ? `<button data-addf="${i}" style="font-size:11.5px;padding:1px 7px" title="Add the folder open in the gallery to this pool">+ add the gallery's folder</button>` : ""}
+        <div class="pbpath" title="${esc([...(s.folder ? (s.folders || [s.path]) : []), ...(s.files || [])].join("\n") || s.path)}">${i + 1}. ${pbSlotLabel(s)}</div>
+        <div class="pbpoolbtns">${s.folder ? `<button data-addf="${i}" title="Add the folder open in the gallery to this pool">+ add the gallery's folder</button>` : ""}<button data-adds="${i}" title="Add the images selected in the gallery to this source - from any folder. Repeat in other folders to cherry-pick one pool.">+ add selected images</button>${(s.files || []).length && (s.lastAdd || []).length ? `<button data-undo="${i}" title="Take out the ${s.lastAdd.length} image(s) added last">&minus; remove last added</button>` : ""}</div>
         <div class="pbw">weight <input type="range" min="0" max="100" value="${s.weight}" data-w="${i}"> <span>${s.weight}</span>
           <button data-rm="${i}" title="Remove this source" style="margin-left:auto">✕</button></div>
         <div class="pbfac">${PB.facets.map(f => `<button data-f="${f}" data-s="${i}" class="${s.only.includes(f) ? "on" : ""}" title="${s.only.includes(f) ? "click to stop using this aspect" : "use ONLY ticked aspects from this source"}">${f}</button>`).join("")}</div>
@@ -2178,7 +2218,7 @@ async function pbRun() {
   if (st.running) { await api("/api/photobash/stop", {}); $("#pbState").textContent = "stopping after this mix..."; return; }
   if (PB.slots.length < 2) return toast("add at least two sources");
   if ($("#model").value === "__loaded__" && !(S.loaded || []).length) return toast("nothing is loaded in LM Studio - load a model there or pick one at the top", 5000);
-  const sources = PB.slots.map(s => ({path: s.path, paths: s.files ? s.files : s.folder ? (s.folders || [s.path]) : undefined, weight: s.weight, take: s.only.length ? s.only : "everything"}));
+  const sources = PB.slots.map(s => ({path: s.path, paths: pbPoolPaths(s), weight: s.weight, take: s.only.length ? s.only : "everything"}));
   await api("/api/photobash/start", {layout: layoutSpec(), trigger: $("#trigger").value.trim(), sources, mode: $("#pbMode").value, mixes: +$("#pbMixes").value || 4, temperature: +$("#pbTemp").value || 0.9,
     seed: $("#pbSeed").value.trim(), note: $("#pbNote").value.trim(), preset: $("#preset").value, model: $("#model").value, reasoning: $("#mode").value,
     avoid_text: $("#pbNoText").checked, avoid_marks: $("#pbNoMarks").checked, add_text: $("#pbAddText").value.trim(), text_where: $("#pbTextWhere").value.trim(),
@@ -2239,6 +2279,8 @@ function pbWire() {
       if (!p) return toast("open a folder in the gallery first"); s.folders = s.folders || [s.path];
       if (s.folders.some(f => f.toLowerCase() === p.toLowerCase())) return toast("that folder is already in this pool");
       s.folders.push(p); pbRenderSlots(); pbSave(); return; }
+    const as = e.target.closest("[data-adds]"); if (as) { pbAddSelectedTo(+as.dataset.adds); return; }
+    const un = e.target.closest("[data-undo]"); if (un) { pbUndoAdd(+un.dataset.undo); return; }
     const f = e.target.closest("[data-f]"); if (f) { const s = PB.slots[+f.dataset.s]; const k = s.only.indexOf(f.dataset.f);
       if (k >= 0) s.only.splice(k, 1); else s.only.push(f.dataset.f); pbRenderSlots(); pbSave(); }
   };
