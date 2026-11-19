@@ -317,12 +317,29 @@ def load_sweep(path: str) -> Dict[str, Any]:
         cells.append(_cell_record(full, prompt, "  ".join(col_parts) or f"cell {c.get('index', '')}", {
             "index": c.get("index"), "checkpoint": _short_ckpt(ckpt), "seed": c.get("seed"),
             "loras": c.get("loras", ""), "time_s": c.get("time_s"),
+            "reference": bool(ov.get("lora_baseline")),          # Eric_Krea2: the no-(test-)LoRA reference cell
             "clip": metrics.get("clip_fraction"), "sharp": metrics.get("sharpness_tenengrad"),
         }))
+    _mark_references(cells)
     about = m.get("about") or {}
     return {"kind": "sweep", "path": path, "name": os.path.basename(path), "sweep_name": m.get("sweep_name", ""),
             "created": m.get("created", ""), "notes": about.get("run_notes", "") or about.get("preset_notes", ""),
             "cells": _attach_all(cells)}
+
+
+def _mark_references(cells: List[Dict[str, Any]]) -> None:
+    """Older sweeps without lora_baseline: in each prompt + seed + checkpoint group, the cell with strictly the fewest
+    LoRAs is the reference (always-on panel LoRAs are in every cell, so 'fewest', not 'none')."""
+    groups: Dict[tuple, List[Dict[str, Any]]] = {}
+    for c in cells:
+        groups.setdefault((c.get("sha"), str(c.get("seed")), c.get("checkpoint")), []).append(c)
+    for g in groups.values():
+        if len(g) < 2 or any(c.get("reference") for c in g):
+            continue
+        n = [len([x for x in str(c.get("loras") or "").splitlines() if x.strip()]) for c in g]
+        low = min(n)
+        if n.count(low) == 1 and max(n) > low:
+            g[n.index(low)]["reference"] = True
 
 
 def load_folder(path: str, recursive: bool = True) -> Dict[str, Any]:
@@ -352,7 +369,12 @@ def load_folder(path: str, recursive: bool = True) -> Dict[str, Any]:
 def _attach_all(cells: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Ratings + vision check summaries (vision imports review, so it is imported here, not at the top)."""
     from .vision import attach_checks
-    return attach_checks(attach_ratings(cells))
+    from .prompt_grades import grades_for
+    cells = attach_checks(attach_ratings(cells))
+    grades = grades_for(c.get("sha") for c in cells)
+    for c in cells:
+        c["pgrade"] = grades.get(c.get("sha"))
+    return cells
 
 
 # ===================================================================================================== ratings DB

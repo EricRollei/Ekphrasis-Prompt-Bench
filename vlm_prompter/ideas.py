@@ -276,6 +276,8 @@ class IdeasJob:
 
     def _add(self, n, text, mode, preset_id, model, info) -> None:
         with self.lock:
+            from .prompt_grades import grade_of
+            info = {**info, "flags": ["graded duff before"] if grade_of(text) == "duff" else []}
             self.state["results"].append({"n": n, "prompt": text, "mode": mode, "preset": preset_id, "model": model,
                                           "images": [], "weights": [], "takes": [], "assignment": {}, **info})
 

@@ -234,7 +234,8 @@ class Handler(BaseHTTPRequestHandler):
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
         try:
             route = {
-                "/": self.page, "/audit": self.audit_page, "/report": self.report_page, "/api/state": self.state,
+                "/": self.page, "/audit": self.audit_page, "/report": self.report_page, "/library": self.library_page,
+                "/api/library": self.library_api, "/api/library/forensics": self.library_forensics, "/api/state": self.state,
                 "/api/review/report": self.review_report,
                 "/api/audit/results": self.audit_results, "/api/audit/status": self.audit_status,
                 "/api/compare/status": self.compare_status, "/api/photobash/status": self.pb_status,
@@ -281,6 +282,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/api/rewrite/start": self.rw_start, "/api/rewrite/stop": self.rw_stop, "/api/rewrite/save": self.rw_save,
                 "/api/rewrite/load": self.rw_load, "/api/rewrite/split": self.rw_split,
                 "/api/render/start": self.r_start, "/api/render/stop": self.r_stop, "/api/wc/roll": self.wc_roll,
+                "/api/pgrade": self.pgrade, "/api/pgrades": self.pgrades, "/api/library/export": self.library_export,
                 "/api/render/fromlast": self.r_fromlast, "/api/render/map": self.r_map,
                 "/api/render/preset": self.r_preset, "/api/render/for_many": self.r_for_many,
             }.get(url.path)
@@ -365,7 +367,7 @@ class Handler(BaseHTTPRequestHandler):
     def settings_put(self, body):
         allowed = {"group_dir", "load_context_length", "max_side", "default_preset", "wildcards_dir", "sweeps_dir",
                    "lmstudio_models_dir", "comfyui_url", "render_gpu", "render_free_after", "render_preset",
-                   "wc_nsfw", "wc_violence", "wc_content_filter", "wc_strip_lora"}
+                   "wc_nsfw", "wc_violence", "wc_content_filter", "wc_strip_lora", "lora_catalog_url"}
         with SETTINGS_LOCK:
             s = config.load_settings()
             for k, v in body.items():
@@ -641,6 +643,55 @@ class Handler(BaseHTTPRequestHandler):
         self._json(report.build(q.get("kind", "sweep"), q.get("path", "")))
 
     # --- Settings page + Render (ComfyUI) ---------------------------------------------------------------------
+    # --- prompt grades + library ----------------------------------------------------------------------------------
+    def pgrade(self, body):
+        from . import prompt_grades
+        self._json(prompt_grades.set_grade(body.get("prompt", ""), body.get("grade"), body.get("reasons"),
+                                           body.get("tags"), body.get("note"), body.get("source", ""),
+                                           body.get("provenance") or {}, body.get("reference", "")))
+
+    def pgrades(self, body):
+        from . import prompt_grades
+        from .outputs import prompt_sha
+        shas = list(body.get("shas") or []) + [prompt_sha(" ".join((t or "").split())) for t in body.get("texts") or []]
+        self._json({"grades": prompt_grades.grades_for(shas)})
+
+    def library_api(self, q):
+        from . import prompt_grades
+        self._json(prompt_grades.library(q.get("grade", "great"), q.get("q", ""), q.get("tag", "")))
+
+    def library_forensics(self, q):
+        from . import prompt_grades
+        self._json(prompt_grades.forensics())
+
+    def library_export(self, body):
+        from . import lists, prompt_grades
+        rows = [r for r in prompt_grades.library(body.get("grade", "great"))["rows"]
+                if not body.get("shas") or r["sha"] in set(body["shas"])]
+        entries = [{"text": r["prompt"], "header": ", ".join(r["tags"]) or r["grade"],
+                    "meta": {"grade": r["grade"], "tags": r["tags"], "reasons": r["reasons"], **r["provenance"]},
+                    "index": {"mode": "library", "image": r["provenance"].get("source_image", ""), "variant": "library"}}
+                   for r in rows]
+        if body.get("grade") == "duff":                       # the archive can be exported for forensics on purpose
+            from . import outputs
+            import os
+            s = config.load_settings()
+            path = outputs.unique_path(os.path.join(s["group_dir"], (body.get("name") or "duff_archive") + ".txt"))
+            with open(path, "w", encoding="utf-8", newline="\n") as h:
+                h.write("\n".join(e["text"] for e in entries) + "\n")
+            return self._json({"path": path, "file": os.path.basename(path), "added": len(entries), "skipped": 0,
+                               "skipped_duff": 0, "action": "new"})
+        self._json(lists.save_list(config.load_settings(), entries, body.get("name", ""), "library", **_list_opts(body)))
+
+    def library_page(self, q):
+        with open(os.path.join(HERE, "library.html"), "rb") as handle:
+            data = handle.read()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def wc_search(self, q):
         from . import wc
         try:
@@ -667,7 +718,7 @@ class Handler(BaseHTTPRequestHandler):
         s = config.load_settings()
         keys = ("group_dir", "wildcards_dir", "sweeps_dir", "lmstudio_models_dir", "load_context_length", "comfyui_url",
                 "render_gpu", "render_free_after", "render_preset", "wc_nsfw", "wc_violence", "wc_content_filter",
-                "wc_strip_lora")
+                "wc_strip_lora", "lora_catalog_url")
         self._json({k: s.get(k) for k in keys})
 
     def r_state(self, q):

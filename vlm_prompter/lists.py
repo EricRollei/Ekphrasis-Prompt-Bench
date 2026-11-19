@@ -72,12 +72,19 @@ def save_list(settings: Dict[str, Any], entries: List[Dict[str, Any]], name: str
         path, exists = unique_path(path), False
     os.makedirs(os.path.dirname(path), exist_ok=True)
     seen = set(_existing(path, fmt)) if (exists and dedupe) else set()
+    from .outputs import prompt_sha
+    from .prompt_grades import duff_shas
+    duff = duff_shas()
+    skipped_duff = 0
     start = len(_existing(path, fmt)) if exists else 0
     made = _dt.datetime.now().isoformat(timespec="seconds")
     chunks, metas, index, skipped = [], [], [], 0
     for e in entries:
         text = one_line(e["text"])
         if not text:
+            continue
+        if prompt_sha(text) in duff:                  # graded duff: kept in the archive, never in new lists
+            skipped_duff += 1
             continue
         if dedupe and text in seen:
             skipped += 1
@@ -106,7 +113,7 @@ def save_list(settings: Dict[str, Any], entries: List[Dict[str, Any]], name: str
                     h.write(json.dumps(m, ensure_ascii=False) + "\n")
         append_index(config.RUNS_DIR, index)
     return {"path": path, "file": os.path.basename(path), "added": len(chunks), "skipped": skipped,
-            "action": "appended" if exists else "new"}
+            "skipped_duff": skipped_duff, "action": "appended" if exists else "new"}
 
 
 # ----------------------------------------------------------------------------------------------- per mode

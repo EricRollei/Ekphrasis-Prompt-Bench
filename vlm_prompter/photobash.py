@@ -295,7 +295,8 @@ class PhotobashJob:
                            "images": images, "weights": [s.get("weight", 50) for s in sources],
                            "takes": [s.get("take") or "everything" for s in sources],
                            "assignment": {f: i + 1 for f, i in (assignment or {}).items()},
-                           "tokens": getattr(r, "completion_tokens", None), "flags": flags,
+                           "tokens": getattr(r, "completion_tokens", None),
+                           "flags": flags + (["graded duff before"] if _graded_duff(text) else []),
                            "replaces": fixed.get("replaces")}
                     with self.lock:
                         self.state["results"].append(res)
@@ -374,3 +375,11 @@ def preview(settings: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, Any]:
     return {"system": msgs[0]["content"], "user": "\n".join(user), "preset": preset.id,
             "max_tokens": int(spec.get("max_tokens") or 0) or preset.max_tokens,
             "draw_example": mode == "draw"}
+
+
+def _graded_duff(text: str) -> bool:
+    from .prompt_grades import grade_of
+    try:
+        return grade_of(text) == "duff"
+    except Exception:
+        return False

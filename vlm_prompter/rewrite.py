@@ -282,7 +282,7 @@ class RewriteJob:
                             earlier.append(" ".join(out.split()[:10]) + " ...")
                         res = {"n": len(self.state["results"]) + 1, "src_index": idx, "k": k, "src": src, "prompt": out,
                                "image": it.get("image", ""), "op": op, "preset": preset.id, "model": api_id,
-                               "flags": flags_for(src, out, keep, preset.token_limit,
+                               "flags": (["graded duff before"] if _graded_duff(out) else []) + flags_for(src, out, keep, preset.token_limit,
                                                   0 if op == "pair" else preset.token_target[0], op)}
                         with self.lock:
                             self.state["results"].append(res)
@@ -356,3 +356,11 @@ def save_results(settings: Dict[str, Any], results: List[Dict[str, Any]], name: 
 
 
 JOB = RewriteJob()
+
+
+def _graded_duff(text: str) -> bool:
+    from .prompt_grades import grade_of
+    try:
+        return grade_of(text) == "duff"
+    except Exception:
+        return False
