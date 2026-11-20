@@ -262,7 +262,31 @@ class IndexLookup:
         return {"model": r.get("model", ""), "preset": r.get("preset", ""), "instr": r.get("instr", ""),
                 "source_image": r.get("image", ""), "made": r.get("made", "") or r.get("saved", ""),
                 "modifiers": mods, "note": (ins or {}).get("note", ""), "variant": r.get("variant", ""),
-                "mode": r.get("mode", ""), "sources": list(r.get("sources") or [])}      # Nov 20: photobash = several
+                "mode": r.get("mode", ""), "sources": _as_list(r.get("sources")),        # Nov 20: photobash = several
+                "weights": _as_list(r.get("weights")), "takes": _as_list(r.get("takes")),
+                "assignment": _as_obj(r.get("assignment")) or {},
+                "source_prompt": r.get("source_prompt", ""), "op": r.get("op", ""), "instruction": r.get("instruction", ""),
+                "brief": r.get("brief", ""), "roll": _as_obj(r.get("roll")), "template": r.get("template", ""),
+                "filled": r.get("filled", ""), "picks": _as_list(r.get("picks"))}
+
+
+def _as_obj(v: Any) -> Any:
+    """Index values are JSON, but older saves wrote lists as their Python text ("['a', 'b']")."""
+    if isinstance(v, str) and v[:1] in "[{":
+        import ast
+        try:
+            return json.loads(v)
+        except ValueError:
+            try:
+                return ast.literal_eval(v)
+            except (ValueError, SyntaxError):
+                return None
+    return v
+
+
+def _as_list(v: Any) -> List[Any]:
+    v = _as_obj(v)
+    return list(v) if isinstance(v, (list, tuple)) else ([v] if v else [])
 
 
 _INDEX: Optional[IndexLookup] = None

@@ -346,6 +346,20 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
 
 .rvrow .rh { flex-wrap:wrap; row-gap:4px; } .rvrow .rh .pt { flex:1 1 60%; min-width:0; } .rvrow .rh .pgbtns { margin-left:auto; }
 .pgreasons button.on { color:var(--fg) !important; font-weight:600; }
+
+/* origin (Nov 20) */
+.srcgrid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.srcgrid img { width:100%; aspect-ratio:1; object-fit:cover; border-radius:6px; cursor:zoom-in; }
+.srcgrid .lbl { font-size:11px; }
+.origin { font-size:12.5px; line-height:1.45; background:var(--soft); border-radius:8px; padding:6px 9px; }
+.origin .orig { white-space:pre-wrap; margin-top:4px; }
+.oscs { display:flex; flex-wrap:wrap; gap:4px 14px; margin:4px 0; }
+.osc { display:flex; align-items:baseline; gap:5px; font-size:12px; }
+.fault { background:#f6e3c4; color:#5a3a00; border-radius:6px; padding:4px 8px; font-size:12.5px; margin:4px 0; }
+
+#rvOriginCheck .it { display:flex; gap:7px; align-items:baseline; font-size:12.5px; margin:2px 0; }
+#rvOriginCheck .y { color:#2e7d32; font-weight:700; } #rvOriginCheck .p { color:#b07a00; font-weight:700; } #rvOriginCheck .n { color:#a33; font-weight:700; }
+#rvOriginCheck .muted { font-size:12px; }
 </style>
 </head>
 <body>
@@ -1508,8 +1522,9 @@ function rvRenderDetail() {
       <label class="muted" style="margin-left:auto" title="Jump to the next render after giving stars"><input type="checkbox" id="rvAdvance" ${R.advance ? "checked" : ""}> next after stars</label></div>
     <div class="imgs">
       <div><img src="${thumb(c.file, 1200)}" data-full="${esc(c.file)}" alt=""><div class="lbl">render · ${esc(c.name)}</div></div>
-      <div>${p && p.source_image ? `<img src="${thumb(p.source_image, 1200)}" data-full="${esc(p.source_image)}" alt=""><div class="lbl">source image</div>` : '<div class="muted" style="font-size:12px">no source image known</div>'}</div>
+      <div>${rvSourceCol(c)}</div>
     </div>
+    ${rvOriginPanel(c)}<div id="rvOriginCheck"></div>
     ${c.sha ? rvGradeSection(c) : ""}
     <h4>Quality</h4>
     <div class="stars">${[1, 2, 3, 4, 5].map(n => `<button data-star="${n}" class="${r.stars >= n ? "on" : ""}" title="${n} (key ${n})">★</button>`).join("")}
@@ -1542,6 +1557,7 @@ function rvRenderDetail() {
 async function rvLoadVision(c) {
   const d = (await api(`/api/review/check/detail?file=${encodeURIComponent(c.file)}`)).detail;
   if (!d || R.data.cells[R.cur] !== c) return;
+  rvShowOriginCheck(d.origin);
   const sym = a => a === "yes" ? '<span class="y">✓</span>' : a === "partly" ? '<span class="p">~</span>' : '<span class="n">✗</span>';
   const adh = d.adherence || {}, fid = d.fidelity, cl = d.checklist || {};
   const items = (adh.items || []).map(it => `<div class="it">${sym(it.answer)}<div>${esc(it.requirement)}
@@ -1683,6 +1699,60 @@ function lsWire() {
   let t0 = "src"; try { t0 = localStorage.getItem("vlmp.pbtab") || "src"; } catch {}
   showTab(t0);
   setTimeout(lsSync, 900);
+}
+// ---------------------------------------------------------------- origin in Review (Nov 20): all sources, original prompt, idea
+function rvContrib(p, i) {
+  const drawn = Object.entries(p.assignment || {}).filter(([, n]) => +n === i + 1).map(([a]) => a);
+  if (drawn.length) return " &middot; drawn: " + esc(drawn.join(", "));
+  const t = (p.takes || [])[i];
+  return Array.isArray(t) && t.length ? " &middot; only: " + esc(t.join(", ")) : "";
+}
+function rvSourceCol(c) {
+  const p = c.prov || {}, srcs = (p.sources || []).filter(Boolean);
+  if (srcs.length > 1) return `<div class="srcgrid">${srcs.map((s, i) => `<div><img src="${thumb(s, 500)}" data-full="${esc(s)}" alt="">
+      <div class="lbl">source ${i + 1}${(p.weights || [])[i] != null ? ` &middot; weight ${p.weights[i]}` : ""}${rvContrib(p, i)}</div></div>`).join("")}</div>`;
+  return p.source_image ? `<img src="${thumb(p.source_image, 1200)}" data-full="${esc(p.source_image)}" alt=""><div class="lbl">source image</div>`
+    : '<div class="muted" style="font-size:12px">no source image known</div>';
+}
+function rvOriginPanel(c) {
+  const p = c.prov || {}, v = (p.variant || "").toLowerCase();
+  let body = "";
+  if (v.startsWith("rewrite") && p.source_prompt)
+    body = `<div><b>${esc(p.op || v.replace("rewrite", "").trim())}</b>${p.instruction ? `: ${esc(p.instruction)}` : ""}</div>
+      <details><summary>original prompt</summary><div class="orig">${esc(p.source_prompt)}</div></details>`;
+  else if (v.startsWith("ideas"))
+    body = [p.brief && `brief: ${esc(p.brief)}`,
+            p.roll && `roll: ${esc(typeof p.roll === "object" ? Object.entries(p.roll).map(([k, x]) => `${k}: ${x}`).join(" · ") : p.roll)}`,
+            p.template && `template: <code>${esc(p.template)}</code>`,
+            (p.picks || []).length && `picks: ${esc(p.picks.join(" · "))}`].filter(Boolean).join("<br>");
+  else if ((p.sources || []).length > 1)
+    body = `${esc(v || "photobash")} of ${p.sources.length} sources (above)${(p.weights || []).length ? "" : " &middot; weights and draws were not recorded for this older save"}`;
+  return body ? `<h4>Origin</h4><div class="origin">${body}</div>` : "";
+}
+function rvShowOriginCheck(o) {
+  const el = $("#rvOriginCheck"); if (!el) return;
+  if (!o) { el.innerHTML = ""; return; }
+  if (o.error) { el.innerHTML = `<div class="muted">origin check failed: ${esc(o.error)}</div>`; return; }
+  const sc = (v, l) => v == null ? "" : `<div class="osc"><span class="score">${Math.round(v)}</span><span class="muted">${l}</span></div>`;
+  const yes = a => a === "yes" ? '<span class="y">&#10003;</span>' : a === "partly" ? '<span class="p">~</span>' : '<span class="n">&#10007;</span>';
+  let scores = "", more = "";
+  if (o.kind === "photobash") {
+    scores = sc(o.prompt_fusion, "prompt fuses the sources") + sc(o.source_clash, "source clash (high = hard to combine)") +
+             sc(o.render_follows_prompt, "render follows prompt") + sc(o.render_coherence, "render coherent");
+    more = (o.sources || []).map(s => `<div class="it">${yes(s.in_prompt)}<div>source ${s.source}: ${esc(s.note || "")}</div></div>`).join("") +
+           ((o.prompt_issues || []).length ? `<div class="muted">prompt: ${esc(o.prompt_issues.join(" · "))}</div>` : "") +
+           (o.clash_notes ? `<div class="muted">sources: ${esc(o.clash_notes)}</div>` : "");
+  } else if (o.kind === "rewrite") {
+    scores = sc(o.change_made, "change made in the prompt") + sc(o.kept, "kept what should stay") + sc(o.render_shows_change, "render shows the change");
+    more = (o.issues || []).length ? `<div class="muted">${esc(o.issues.join(" · "))}</div>` : "";
+  } else {
+    scores = sc(o.idea_in_prompt, "idea in the prompt") + sc(o.idea_in_render, "idea in the render") + sc(o.render_coherence, "render coherent");
+    more = (o.issues || []).length ? `<div class="muted">${esc(o.issues.join(" · "))}</div>` : "";
+  }
+  const fault = o.likely_fault && o.likely_fault !== "none"
+    ? `<div class="fault">likely fault: <b>${esc(o.likely_fault)}</b> &mdash; ${esc(o.why || "")}</div>`
+    : (o.why ? `<div class="muted">${esc(o.why)}</div>` : "");
+  el.innerHTML = `<h4>Origin check</h4>${fault}<div class="oscs">${scores}</div>${more}`;
 }
 // ---------------------------------------------------------------- prompt grades (Nov 19): great / ok / duff on the prompt
 const PG_LABEL = {duff: "&#10007; duff", ok: "&#10003; ok", great: "&#9733; great"};

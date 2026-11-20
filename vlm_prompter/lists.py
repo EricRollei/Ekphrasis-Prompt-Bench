@@ -137,7 +137,9 @@ def ideas_entries(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
              "meta": {"variant": f"ideas {r.get('mode', '')}", "preset": r.get("preset", ""), "model": r.get("model", ""),
                       "roll": r.get("roll"), "filled": r.get("filled")},
              "index": {"mode": "ideas", "image": "", "model": r.get("model", ""), "preset": r.get("preset", ""),
-                       "instr": "", "variant": f"ideas {r.get('mode', '')}"}} for r in results]
+                       "instr": "", "variant": f"ideas {r.get('mode', '')}", "brief": r.get("brief", ""),
+                       "roll": r.get("roll"), "template": r.get("template", ""), "filled": r.get("filled", ""),
+                       "picks": r.get("picks", [])}} for r in results]
 
 
 def rewrite_entries(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -145,4 +147,6 @@ def rewrite_entries(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
              "meta": {"variant": f"rewrite {r.get('op', '')}", "preset": r.get("preset", ""), "model": r.get("model", ""),
                       "source_prompt": r.get("src", ""), "image": r.get("image", ""), "flags": r.get("flags", [])},
              "index": {"mode": "rewrite", "image": r.get("image", ""), "model": r.get("model", ""),
-                       "preset": r.get("preset", ""), "instr": "", "variant": f"rewrite {r.get('op', '')}"}} for r in results]
+                       "preset": r.get("preset", ""), "instr": "", "variant": f"rewrite {r.get('op', '')}",
+                       "source_prompt": r.get("src", ""), "op": r.get("op", ""),
+                       "instruction": r.get("instruction", "")}} for r in results]

@@ -214,7 +214,7 @@ class IdeasJob:
                 if self.cancel.is_set():
                     break
                 try:
-                    info: Dict[str, Any] = {}
+                    info: Dict[str, Any] = {"brief": brief} if mode != "wildcards" else {"template": spec["template"]}
                     if mode == "wildcards":
                         res = wcmod.process(settings, spec["template"], seed=rng.randrange(0, 0x7FFFFFFF),
                                             providers=providers)

@@ -355,7 +355,11 @@ class Checker:
                                                     "prompt_tokens": 0}
         adh = self.adherence(cell, cl)
         fid = self.fidelity(cell) if do_fidelity else None
-        return {"adherence": adh, "fidelity": fid, "checklist": cl, "model": self.model, "mode": self.mode,
+        try:                                          # Nov 20: judged against where the prompt came from
+            org = origin_check(self, cell) if do_fidelity else None
+        except Exception as exc:
+            org = {"error": f"{type(exc).__name__}: {exc}"}
+        return {"adherence": adh, "fidelity": fid, "origin": org, "checklist": cl, "model": self.model, "mode": self.mode,
                 "seconds": round(time.perf_counter() - t0, 1)}
 
 
@@ -482,3 +486,117 @@ class CheckJob:
 
 
 JOB = CheckJob()
+
+
+# ===================================================================================================== origin checks (Nov 20)
+# Judge a render against where its prompt came from: photobash sources, the rewrite's original prompt, the idea.
+ORIGIN_PHOTOBASH = """You judge one PHOTOBASH. A prompt writer looked at several SOURCE pictures and wrote ONE prompt for a new
+picture that fuses them; an image model then rendered that prompt. You get the sources (each with what it was meant to
+contribute), the PROMPT, and the RENDER. Answer only from what you see and read. The point is to find WHERE a weak
+result comes from: the prompt, the combination of sources, or the image model.
+
+Return only JSON:
+{"sources": [{"source": 1, "in_prompt": "yes|partly|no", "note": "what of it reached the prompt, or what was lost"}],
+ "prompt_fusion": 0-100,      // does the PROMPT reconcile the sources into ONE believable scene - one place, one light,
+                              // one scale, one moment, consistent medium - instead of listing incompatible things?
+ "prompt_issues": ["..."],    // contradictions, collage wording, things an image cannot show ...
+ "source_clash": 0-100,       // how hard are THESE sources to combine at all? 0 = natural fit, 100 = nearly impossible
+                              // (clashing media, scales, viewpoints, eras, lighting)
+ "clash_notes": "...",
+ "render_follows_prompt": 0-100,
+ "render_coherence": 0-100,   // is the RENDER one coherent picture - no collage, double exposure, broken anatomy or physics?
+ "likely_fault": "prompt|combination|image model|none",
+ "why": "one or two sentences"}"""
+
+ORIGIN_REWRITE = """You judge a prompt REWRITE and the picture made from the new prompt. You get the ORIGINAL prompt (and the
+image it described, when known), the operation and the instruction that was asked for, the NEW prompt and the RENDER.
+Answer only from what you see and read.
+
+Return only JSON:
+{"change_made": 0-100,          // did the NEW prompt carry out the instruction everywhere it applies?
+ "kept": 0-100,                 // did it keep what should stay (subject, setting, details the instruction did not touch)?
+ "render_shows_change": 0-100,  // does the RENDER show the requested change?
+ "issues": ["..."],
+ "likely_fault": "prompt|image model|none",
+ "why": "one or two sentences"}"""
+
+ORIGIN_IDEAS = """You judge a picture made from a prompt that was INVENTED from an idea - a brief, a random roll of
+ingredients, or a wildcard template with its picks. You get the IDEA, the PROMPT and the RENDER. Answer only from what you
+see and read.
+
+Return only JSON:
+{"idea_in_prompt": 0-100,     // did the prompt keep the idea's ingredients and make one coherent picture of them?
+ "idea_in_render": 0-100,     // does the render show the idea?
+ "render_coherence": 0-100,
+ "issues": ["..."],
+ "likely_fault": "prompt|idea|image model|none",   // "idea" = the ingredients themselves do not go together
+ "why": "one or two sentences"}"""
+
+
+def _origin_kind(prov: Dict[str, Any]) -> str:
+    variant = (prov.get("variant") or "").lower()
+    if prov.get("mode") == "photobash" or variant.startswith("photobash") or len(prov.get("sources") or []) > 1:
+        return "photobash"
+    if variant.startswith("rewrite") and prov.get("source_prompt"):
+        return "rewrite"
+    if variant.startswith("ideas") and (prov.get("brief") or prov.get("roll") or prov.get("filled") or prov.get("template")):
+        return "ideas"
+    return ""
+
+
+def _contributes(i: int, prov: Dict[str, Any]) -> str:
+    takes = (prov.get("takes") or [])
+    t = takes[i] if i < len(takes) else "everything"
+    drawn = [a for a, n in (prov.get("assignment") or {}).items() if int(n) == i + 1]
+    if drawn:
+        return "drawn for: " + ", ".join(drawn)
+    if isinstance(t, list) and t:
+        return "only: " + ", ".join(t)
+    return "everything"
+
+
+def origin_check(checker, cell: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    prov = cell.get("prov") or {}
+    kind = _origin_kind(prov)
+    if not kind:
+        return None
+    prompt = cell.get("prompt") or ""
+    render = [{"type": "text", "text": "RENDER:"}, {"type": "image_url", "image_url": {"url": _image_url(cell["file"], 768)}}]
+    if kind == "photobash":
+        srcs = [s for s in (prov.get("sources") or []) if os.path.isfile(s)][:4]
+        if len(srcs) < 2:
+            return None
+        weights = prov.get("weights") or []
+        content = []
+        for i, s in enumerate(srcs):
+            w = f", weight {weights[i]}" if i < len(weights) else ""
+            content += [{"type": "text", "text": f"SOURCE {i + 1}{w} - contributes {_contributes(i, prov)}:"},
+                        {"type": "image_url", "image_url": {"url": _image_url(s, 640)}}]
+        content += [{"type": "text", "text": "PROMPT:\n" + prompt}] + render
+        out = checker._ask(ORIGIN_PHOTOBASH, content, 1500)
+    elif kind == "rewrite":
+        content = [{"type": "text", "text": f"OPERATION: {prov.get('op') or (prov.get('variant') or '').replace('rewrite', '').strip()}\n"
+                                              f"INSTRUCTION: {prov.get('instruction') or '(none - format conversion)'}\n\n"
+                                              f"ORIGINAL PROMPT:\n{prov.get('source_prompt')}"}]
+        img = prov.get("source_image")
+        if img and os.path.isfile(img):
+            content += [{"type": "text", "text": "IMAGE THE ORIGINAL DESCRIBED:"}, {"type": "image_url", "image_url": {"url": _image_url(img, 640)}}]
+        content += [{"type": "text", "text": "NEW PROMPT:\n" + prompt}] + render
+        out = checker._ask(ORIGIN_REWRITE, content, 1000)
+    else:
+        idea = []
+        if prov.get("brief"):
+            idea.append("brief: " + str(prov["brief"]))
+        if prov.get("roll"):
+            r = prov["roll"]
+            idea.append("rolled ingredients: " + (", ".join(f"{k}: {v}" for k, v in r.items()) if isinstance(r, dict) else str(r)))
+        if prov.get("template"):
+            idea.append("wildcard template: " + str(prov["template"]))
+        if prov.get("picks"):
+            idea.append("its random picks: " + "; ".join(prov["picks"]) if isinstance(prov["picks"], list) else str(prov["picks"]))
+        elif prov.get("filled"):
+            idea.append("filled template: " + str(prov["filled"]))
+        content = [{"type": "text", "text": "IDEA:\n" + "\n".join(idea) + "\n\nPROMPT:\n" + prompt}] + render
+        out = checker._ask(ORIGIN_IDEAS, content, 1000)
+    out["kind"] = kind
+    return out
