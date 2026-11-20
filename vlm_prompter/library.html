@@ -109,6 +109,42 @@ async function loadForensics() {
   const rs = Object.entries(d.reasons).filter(([, v]) => v.length).map(([g, v]) => `<h3>Reasons given: ${g}</h3><div>${v.map(([r, n]) => `<span class="chip">${esc(r)} &times;${n}</span>`).join("")}</div>`).join("");
   $("#main").innerHTML = (tbl("By variant (preset version, photobash mode, ideas mode, rewrite operation)", d.by_variant) + tbl("By model", d.by_model) + meas + rs)
     || '<div class="empty">Grade some prompts first - forensics compares great, ok and duff.</div>';
+  $("#main").insertAdjacentHTML("beforeend", '<div id="p2"></div>');
+  loadPhase2().catch(e => toast(e.message, 6000));
+}
+// -- phase 2 (Nov 20 2026): lessons + suggested grades --------------------------------------------------------------
+async function loadPhase2() {
+  const [ls, sg] = await Promise.all([api("/api/lessons"), api("/api/grade_suggestions")]);
+  const st = {accepted: "&#10003; accepted", proposed: "proposed", rejected: "&#10007; rejected"};
+  const lessons = ls.lessons.map(x => `<div class="lesson" style="margin:6px 0;padding:6px 8px;border:1px solid #555;border-radius:6px;${x.status === "rejected" ? "opacity:.5" : ""}">
+      <div><b>${esc(x.rule)}</b> <span class="chip">${st[x.status] || x.status}</span></div>
+      <div class="muted" style="font-size:12px">${esc(x.why)} ${x.examples.length ? "(" + esc(x.examples.join(", ")) + ")" : ""}</div>
+      <div style="margin-top:4px">${x.status !== "accepted" ? `<button data-ls="${x.id}" data-to="accepted">Accept</button>` : ""}
+        ${x.status !== "rejected" ? `<button data-ls="${x.id}" data-to="rejected">Reject</button>` : ""}
+        ${x.status !== "proposed" ? `<button data-ls="${x.id}" data-to="proposed">Undecide</button>` : ""}</div></div>`).join("");
+  const th = sg.thresholds, cal = sg.calibrated_on;
+  const row = x => `<tr><td>${x.grade ? esc(x.grade) : ""}</td><td><b>${esc(x.suggested)}</b></td><td>${x.adherence}</td><td>${x.checkpoints}</td><td>${x.renders}${x.reference_only ? " ref" : ""}</td><td title="${esc(x.prompt)}">${esc((x.prompt || "").slice(0, 110))}${(x.prompt || "").length > 110 ? "..." : ""}</td></tr>`;
+  const head = `<tr><th>your grade</th><th>suggested</th><th>adherence</th><th>checkpoints</th><th>renders</th><th>prompt</th></tr>`;
+  $("#p2").innerHTML = `<h3>Lessons - what separates great from duff</h3>
+    <div class="muted">A language model (the one loaded in LM Studio) compares samples of your great and duff prompts and proposes writing rules.
+      Nothing changes until you accept one; accepted lessons become the run-wide modifier chip <b>Learned lessons</b>.</div>
+    <button id="lsgo">Propose lessons</button> <span id="lsmsg" class="muted"></span>
+    ${lessons || '<div class="muted">No lessons yet.</div>'}
+    <h3>Suggested grades (from vision-check adherence)</h3>
+    <div class="muted">Mean adherence of each prompt's renders, per checkpoint then averaged (no-LoRA reference renders when there are any).
+      Thresholds: duff below ${th.duff_below}, great from ${th.great_from} - ${cal >= 10 ? `calibrated on ${cal} prompts you graded, agreeing ${sg.agreement}%` : `defaults: calibration needs 10+ graded prompts that also have vision checks (now ${cal}) - run a vision check on the sweeps you graded`}.
+      ${sg.catalog_linked ? "Includes the LoRA Catalog's vision checks." : "LoRA Catalog checks not linked (settings lora_catalog_db / sweeps_root)."}
+      A suggestion only: adherence says renders follow the prompt, not that the prompt is a good idea.</div>
+    ${sg.disagree.length ? `<h4>Where the suggestion disagrees with your grade (${sg.disagree.length})</h4><table>${head}${sg.disagree.slice(0, 60).map(row).join("")}</table>` : ""}
+    <h4>Ungraded prompts with checks (${sg.ungraded.length})</h4>${sg.ungraded.length ? `<table>${head}${sg.ungraded.slice(0, 120).map(row).join("")}</table>` : '<div class="muted">none</div>'}`;
+  $("#lsgo").onclick = async () => {
+    $("#lsgo").disabled = true; $("#lsmsg").textContent = "the model is reading your great and duff prompts (a minute or two)...";
+    try { const r = await api("/api/lessons/propose", {}); if (r.ok === false) throw new Error(r.error);
+          toast(`${r.added} lessons proposed by ${r.model}`); loadPhase2(); }
+    catch (e) { $("#lsmsg").textContent = "not done: " + e.message; $("#lsgo").disabled = false; }
+  };
+  document.querySelectorAll("#p2 [data-ls]").forEach(b => b.onclick = async () => {
+    await api("/api/lessons/status", {id: +b.dataset.ls, status: b.dataset.to}); loadPhase2(); });
 }
 function chosen() { return L.rows.filter(r => !L.picked.size || L.picked.has(r.sha)); }
 document.addEventListener("click", async e => {

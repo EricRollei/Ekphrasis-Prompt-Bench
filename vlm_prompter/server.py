@@ -235,7 +235,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             route = {
                 "/": self.page, "/audit": self.audit_page, "/report": self.report_page, "/library": self.library_page,
-                "/api/library": self.library_api, "/api/library/forensics": self.library_forensics, "/api/state": self.state,
+                "/api/library": self.library_api, "/api/library/forensics": self.library_forensics, "/api/lessons": self.lessons_list,
+                "/api/grade_suggestions": self.grade_suggestions, "/api/state": self.state,
                 "/api/review/report": self.review_report,
                 "/api/audit/results": self.audit_results, "/api/audit/status": self.audit_status,
                 "/api/compare/status": self.compare_status, "/api/photobash/status": self.pb_status,
@@ -282,7 +283,8 @@ class Handler(BaseHTTPRequestHandler):
                 "/api/rewrite/start": self.rw_start, "/api/rewrite/stop": self.rw_stop, "/api/rewrite/save": self.rw_save,
                 "/api/rewrite/load": self.rw_load, "/api/rewrite/split": self.rw_split,
                 "/api/render/start": self.r_start, "/api/render/stop": self.r_stop, "/api/wc/roll": self.wc_roll,
-                "/api/pgrade": self.pgrade, "/api/pgrades": self.pgrades, "/api/library/export": self.library_export,
+                "/api/pgrade": self.pgrade, "/api/lessons/propose": self.lessons_propose,
+                "/api/lessons/status": self.lessons_status, "/api/pgrades": self.pgrades, "/api/library/export": self.library_export,
                 "/api/render/fromlast": self.r_fromlast, "/api/render/map": self.r_map,
                 "/api/render/preset": self.r_preset, "/api/render/for_many": self.r_for_many,
             }.get(url.path)
@@ -367,7 +369,7 @@ class Handler(BaseHTTPRequestHandler):
     def settings_put(self, body):
         allowed = {"group_dir", "load_context_length", "max_side", "default_preset", "wildcards_dir", "sweeps_dir",
                    "lmstudio_models_dir", "comfyui_url", "render_gpu", "render_free_after", "render_preset",
-                   "wc_nsfw", "wc_violence", "wc_content_filter", "wc_strip_lora", "lora_catalog_url"}
+                   "wc_nsfw", "wc_violence", "wc_content_filter", "wc_strip_lora", "lora_catalog_url", "lora_catalog_db", "sweeps_root"}
         with SETTINGS_LOCK:
             s = config.load_settings()
             for k, v in body.items():
@@ -660,6 +662,26 @@ class Handler(BaseHTTPRequestHandler):
         from . import prompt_grades
         self._json(prompt_grades.library(q.get("grade", "great"), q.get("q", ""), q.get("tag", "")))
 
+    # -- phase 2 (Nov 20 2026): lessons + suggested grades ----------------------------------------------------------
+    def lessons_list(self, q):
+        from . import prompt_lessons
+        self._json({"lessons": prompt_lessons.lessons()})
+
+    def lessons_propose(self, body):
+        from . import prompt_lessons
+        try:
+            self._json(prompt_lessons.propose(config.load_settings(), body.get("model") or "__loaded__"))
+        except Exception as e:                               # LM Studio not reachable / nothing loaded
+            self._json({"ok": False, "error": f"{type(e).__name__}: {e}"})
+
+    def lessons_status(self, body):
+        from . import prompt_lessons
+        self._json(prompt_lessons.set_status(int(body.get("id") or 0), body.get("status", ""), body.get("rule")))
+
+    def grade_suggestions(self, q):
+        from . import prompt_lessons
+        self._json(prompt_lessons.suggestions(config.load_settings()))
+
     def library_forensics(self, q):
         from . import prompt_grades
         self._json(prompt_grades.forensics())
@@ -718,7 +740,7 @@ class Handler(BaseHTTPRequestHandler):
         s = config.load_settings()
         keys = ("group_dir", "wildcards_dir", "sweeps_dir", "lmstudio_models_dir", "load_context_length", "comfyui_url",
                 "render_gpu", "render_free_after", "render_preset", "wc_nsfw", "wc_violence", "wc_content_filter",
-                "wc_strip_lora", "lora_catalog_url")
+                "wc_strip_lora", "lora_catalog_url", "lora_catalog_db", "sweeps_root")
         self._json({k: s.get(k) for k in keys})
 
     def r_state(self, q):

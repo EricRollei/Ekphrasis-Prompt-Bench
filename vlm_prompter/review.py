@@ -261,7 +261,8 @@ class IndexLookup:
         mods = [(m[0] + ("=" + m[1] if len(m) > 1 and m[1] else "")) for m in (ins or {}).get("modifiers", []) or []]
         return {"model": r.get("model", ""), "preset": r.get("preset", ""), "instr": r.get("instr", ""),
                 "source_image": r.get("image", ""), "made": r.get("made", "") or r.get("saved", ""),
-                "modifiers": mods, "note": (ins or {}).get("note", ""), "variant": r.get("variant", "")}
+                "modifiers": mods, "note": (ins or {}).get("note", ""), "variant": r.get("variant", ""),
+                "mode": r.get("mode", ""), "sources": list(r.get("sources") or [])}      # Nov 20: photobash = several
 
 
 _INDEX: Optional[IndexLookup] = None

@@ -286,6 +286,10 @@ class Checker:
         src = prov.get("source_image")
         if not src or not os.path.isfile(src):
             return None
+        # Nov 20 2026: a photobash prompt mixes several images - comparing the render with ONE of them says nothing,
+        # so there is no fidelity score for it (adherence to the prompt still applies)
+        if prov.get("mode") == "photobash" or len(prov.get("sources") or []) > 1:
+            return None
         changes = requested_changes(prov)
         text = "REQUESTED CHANGES:\n" + ("\n".join(f"{n}. {c}" for n, c in enumerate(changes, 1)) or "(none)")
         out = self._ask(FIDELITY_SYSTEM, [{"type": "text", "text": text + "\n\nIMAGE 1 (source):"},

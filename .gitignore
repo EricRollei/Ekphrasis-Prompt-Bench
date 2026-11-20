@@ -18,3 +18,4 @@ render_presets/
 renders/
 assets/*.mp4
 assets/*.mov
+modifiers/learned_lessons.yaml

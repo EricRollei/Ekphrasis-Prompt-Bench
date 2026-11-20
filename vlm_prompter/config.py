@@ -68,7 +68,9 @@ DEFAULTS: Dict[str, Any] = {
     "render_gpu": "shared",             # shared: unload the LM Studio model while rendering | separate: both at once
     "render_free_after": True,          # shared GPU: ask ComfyUI to free its VRAM after a render batch
     "render_preset": "",                # last render preset used
-    "lora_catalog_url": "",             # LoRA Catalog (Eric_LoRA_Catalog) address for the Review link to its Sweeps page
+    "lora_catalog_url": "",
+    "lora_catalog_db": "",              # optional: the LoRA Catalog's sqlite, read-only - its vision checks feed suggested grades
+    "sweeps_root": "",                  # optional: the Eric_Krea2 sweeps folder those checks refer to (output/sweeps)             # LoRA Catalog (Eric_LoRA_Catalog) address for the Review link to its Sweeps page
 
     # --- Wildcards (Ideas tab; the engine shared with video_prompter) ---------------------------------------------------
     "wc_nsfw": "off",                   # off | suggestive | nudity | explicit - lists and entries above it are never picked

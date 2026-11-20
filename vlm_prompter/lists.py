@@ -127,7 +127,8 @@ def photobash_entries(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                              "images": imgs, "weights": w, "takes": r.get("takes", []), "assignment": r.get("assignment", {})},
                     "index": {"mode": "photobash", "image": imgs[main] if imgs else "", "model": r.get("model", ""),
                               "preset": r.get("preset", ""), "instr": "", "variant": f"photobash {r.get('mode', '')}",
-                              "sources": imgs}})
+                              "sources": imgs, "weights": w, "takes": r.get("takes", []),
+                              "assignment": r.get("assignment", {})}})
     return out
 
 
