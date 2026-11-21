@@ -386,6 +386,10 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
 .spfeat { font-size:15.5px; line-height:1.45; margin-top:2px; }
 .spcred { padding-top:10px; }
 @media (max-width:820px) { .spimg { display:block; } .sptitle { font-size:30px; } }
+
+/* Nov 21: the splash picture sits in a rounded frame, like a mounted print */
+.spimg { background:transparent; padding:18px 18px 0; }
+.spimg img { border-radius:12px; border:1px solid var(--line); box-shadow:0 6px 18px rgba(0,0,0,.28); }
 </style>
 </head>
 <body>
