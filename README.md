@@ -274,7 +274,7 @@ trigger words and names; quoted text is always kept. Results are reviewed **by e
 
 ### Review - check what came back
 
-<!-- screenshot to come: assets/review.png -->
+![Review](assets/review.jpg)
 
 Open a ComfyUI sweep folder (from the [Eric_Krea2](https://github.com/EricRollei/Krea2_ComfyUI_Advanced) sweep
 system) or any image folder. Renders are grouped by prompt and shown next to their **source image** and the **settings
