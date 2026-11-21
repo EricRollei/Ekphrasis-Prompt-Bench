@@ -235,6 +235,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             route = {
                 "/": self.page, "/audit": self.audit_page, "/report": self.report_page, "/library": self.library_page,
+                "/asset": self.asset,
                 "/api/library": self.library_api, "/api/library/forensics": self.library_forensics, "/api/lessons": self.lessons_list,
                 "/api/grade_suggestions": self.grade_suggestions, "/api/state": self.state,
                 "/api/review/report": self.review_report,
@@ -704,6 +705,25 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"path": path, "file": os.path.basename(path), "added": len(entries), "skipped": 0,
                                "skipped_duff": 0, "action": "new"})
         self._json(lists.save_list(config.load_settings(), entries, body.get("name", ""), "library", **_list_opts(body)))
+
+    def asset(self, q):
+        """Images from the app's assets folder (the splash uses assets/hero.jpg) - file names only, images only."""
+        name = os.path.basename(q.get("name", ""))
+        ext = os.path.splitext(name)[1].lower()
+        types = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
+        path = os.path.join(config.APP_DIR, "assets", name)
+        if ext not in types or not os.path.isfile(path):
+            self.send_response(404)
+            self.end_headers()
+            return
+        with open(path, "rb") as handle:
+            data = handle.read()
+        self.send_response(200)
+        self.send_header("Content-Type", types[ext])
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "max-age=86400")
+        self.end_headers()
+        self.wfile.write(data)
 
     def library_page(self, q):
         with open(os.path.join(HERE, "library.html"), "rb") as handle:
