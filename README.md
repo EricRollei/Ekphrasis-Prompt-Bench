@@ -15,8 +15,7 @@ Everything runs on your own machine. No cloud, no accounts.
 
 ![Ekphrasis Prompt Bench](assets/hero.jpg)
 
-*Made with the bench: a Photobash of several source pictures, the brass badge added with "add text", rendered with
-Krea 2 straight from the app.*
+*Spelling it out: a game-show spoof rendered with Krea 2.*
 
 ---
 

@@ -376,6 +376,16 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
 .spcred { margin-top:auto; padding-top:14px; border-top:1px solid var(--line); font-size:14.5px; display:flex; flex-direction:column; gap:3px; }
 .sphint { font-size:11.5px; color:var(--muted); text-align:right; }
 @media (max-width:820px) { .spimg { display:none; } .sptitle { font-size:36px; } }
+
+/* Nov 21: the splash is a portrait card - picture across the top, text below */
+.spbox { flex-direction:column; width:min(760px, 94vw); max-width:none; max-height:94vh; }
+.spimg { flex:0 0 auto; background:#111; }
+.spimg img { width:100%; height:auto; max-height:52vh; aspect-ratio:4 / 3; object-fit:cover; display:block; }
+.sptext { padding:20px 30px 18px; gap:8px; }
+.sptitle { font-size:38px; }
+.spfeat { font-size:15.5px; line-height:1.45; margin-top:2px; }
+.spcred { padding-top:10px; }
+@media (max-width:820px) { .spimg { display:block; } .sptitle { font-size:30px; } }
 </style>
 </head>
 <body>
@@ -2578,7 +2588,10 @@ function rvWire() {
 function splashShow(auto) {
   const s = $("#splash"); if (!s) return;
   const img = $("#spHero");
-  if (!img.getAttribute("src")) { img.onerror = () => { $(".spimg").style.display = "none"; }; img.src = "/asset?name=hero.jpg"; }
+  if (!img.getAttribute("src")) {                    // splash-hero.jpg if present, else the README hero, else no picture
+    img.onerror = () => { if (img.src.includes("splash-hero")) img.src = "/asset?name=hero.jpg"; else $(".spimg").style.display = "none"; };
+    img.src = "/asset?name=splash-hero.jpg";
+  }
   s.classList.add("on"); s.classList.remove("out");
   clearTimeout(splashShow.t);
   if (auto) splashShow.t = setTimeout(splashHide, 3600);
