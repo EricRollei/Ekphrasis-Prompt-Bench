@@ -113,7 +113,7 @@ presets). The render keys are `comfyui_url`, `render_gpu` (`shared` or `separate
 
 ### Describe - images to prompts
 
-<!-- screenshot to come: assets/generate.png -->
+![Describe](assets/describe.jpg)
 
 1. Browse to a folder (recent folders and drives on the left; the gallery handles very large folders).
 2. Select images and **+ Add selected** (or add the whole folder) to the queue.
@@ -124,6 +124,8 @@ setting / era / lighting / palette, add text, extra detail, free instruction), a
 head directions** from the pose detectors. The **Instructions** tab holds variations, thinking mode, temperature, max
 tokens, seed and context length, plus **Compare versions** - several prompt versions per image (presets x with/without
 head directions) written into one list for an A/B sweep.
+
+<img src="assets/describe-detail.jpg" alt="Describe: the queue with modifiers, prompts and a render strip" width="520">
 
 **Saving** - per image (`<name>.prompt.txt` beside the image), per folder, or one combined list, in lines, blocks or
 JSONL. The Save tab shows for each file whether it is new, will be added to, or gets a new number. Nothing is ever
@@ -142,7 +144,7 @@ ai-toolkit, kohya and OneTrainer read. An existing caption is never overwritten;
 
 ### Photobash - several pictures into one new picture
 
-<!-- screenshot to come: assets/photobash.png -->
+![Photobash](assets/photobash.jpg)
 
 Add 2-4 **sources**: single images, a **folder as a pool** (a random image per mix; a pool can hold several folders,
 each with an equal chance), or **a selection as one pool** (pick a hand-chosen subset of a folder in the gallery -
@@ -227,7 +229,7 @@ model's context, so two or three sources are cheaper and often more coherent tha
 
 ### Ideas - prompts without images
 
-![Ideas](assets/ideas.png)
+![Ideas](assets/ideas.jpg)
 
 Prompt lists without source images, written by the loaded model in the chosen preset's format.
 
