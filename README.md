@@ -365,6 +365,12 @@ vlm.bat --help
 - **Prompts come back empty** - thinking models can use the whole token budget on reasoning; lower the thinking mode or
   raise max tokens (the app retries once on its own).
 
+## About
+
+![Ekphrasis Prompt Bench](assets/splash.jpg)
+
+The start-up screen - click the app's title in the top bar to see it again.
+
 ## License
 
 Dual license by Eric Hiss: non-commercial use under a modified CC BY-NC 4.0 with attribution; commercial use by
