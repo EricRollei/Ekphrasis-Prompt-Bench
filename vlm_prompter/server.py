@@ -235,6 +235,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             route = {
                 "/": self.page, "/audit": self.audit_page, "/report": self.report_page, "/library": self.library_page,
+                "/api/render/providers": self.r_providers,
                 "/asset": self.asset,
                 "/api/library": self.library_api, "/api/library/forensics": self.library_forensics, "/api/lessons": self.lessons_list,
                 "/api/grade_suggestions": self.grade_suggestions, "/api/state": self.state,
@@ -284,7 +285,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/api/rewrite/start": self.rw_start, "/api/rewrite/stop": self.rw_stop, "/api/rewrite/save": self.rw_save,
                 "/api/rewrite/load": self.rw_load, "/api/rewrite/split": self.rw_split,
                 "/api/render/start": self.r_start, "/api/render/stop": self.r_stop, "/api/wc/roll": self.wc_roll,
-                "/api/pgrade": self.pgrade, "/api/lessons/propose": self.lessons_propose,
+                "/api/render/apikey": self.r_apikey, "/api/pgrade": self.pgrade, "/api/lessons/propose": self.lessons_propose,
                 "/api/lessons/status": self.lessons_status, "/api/pgrades": self.pgrades, "/api/library/export": self.library_export,
                 "/api/render/fromlast": self.r_fromlast, "/api/render/map": self.r_map,
                 "/api/render/preset": self.r_preset, "/api/render/for_many": self.r_for_many,
@@ -799,6 +800,28 @@ class Handler(BaseHTTPRequestHandler):
         render.save_mapping(body["name"], body.get("mapping") or {})
         self._json({"ok": True, "mapping": render.load_mapping(body["name"])})
 
+    def r_apikey(self, body):
+        from .image_apis import PROVIDERS
+        b = body.get("backend", "")
+        if b not in PROVIDERS:
+            return self._error("unknown image API")
+        with SETTINGS_LOCK:
+            s = config.load_settings()
+            keys = dict(s.get("api_keys") or {})
+            k = (body.get("key") or "").strip()
+            if k:
+                keys[b] = k
+            else:
+                keys.pop(b, None)
+            s["api_keys"] = keys
+            config.save_settings(s)
+        self._json({"backend": b, "has_key": bool(keys.get(b))})
+
+    def r_providers(self, q):
+        from .image_apis import PROVIDERS
+        keys = config.load_settings().get("api_keys") or {}
+        self._json({"providers": {k: {**v, "has_key": bool(keys.get(k))} for k, v in PROVIDERS.items()}})
+
     def r_preset(self, body):
         from . import render
         self._json(render.save_preset(body))
@@ -811,7 +834,15 @@ class Handler(BaseHTTPRequestHandler):
                 s = config.load_settings()
                 s["render_preset"] = p
                 config.save_settings(s)
-        if config.load_settings().get("render_gpu", "shared") == "shared" and self._lm_busy():
+        preset = render.get_preset(p) if p else {}
+        api = preset.get("backend", "comfyui") != "comfyui"
+        if api and not body.get("confirm_cost"):          # hosted APIs cost money: the page must confirm first
+            from .image_apis import PROVIDERS
+            n = len([i for i in body.get("items") or [] if (i.get("text") or "").strip()]) * int(preset.get("batch") or 1)
+            price = float(preset.get("price") or 0)
+            return self._json({"needs_confirm": True, "images": n, "service": PROVIDERS[preset["backend"]]["label"],
+                               "model": preset.get("model", ""), "price": price, "estimate": round(n * price, 2)})
+        if not api and config.load_settings().get("render_gpu", "shared") == "shared" and self._lm_busy():
             return self._error("a prompt job is using LM Studio - on one GPU wait for it, or set GPU sharing to separate")
         self._json(render.JOB.start(body.get("items") or [], p))
 

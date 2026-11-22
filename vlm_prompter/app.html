@@ -1893,7 +1893,12 @@ async function rnLoadState() {
 async function rnStart(items) {
   if (!$("#rPreset").value) { rnOpenSettings(); return toast("make a render preset first (Settings > Render presets)"); }
   const lp = (S.presets || []).find(x => x.id === $("#preset").value);
-  await api("/api/render/start", {preset: $("#rPreset").value, items: items.map(t => ({text: t}))});
+  let r = await api("/api/render/start", {preset: $("#rPreset").value, items: items.map(t => ({text: t}))});
+  if (r.needs_confirm) {                              // a hosted image API bills per image: confirm first
+    const cost = r.price ? `About $${r.estimate.toFixed(2)} (${r.images} x $${r.price}).` : "No price is set for this preset - check the service's pricing.";
+    if (!confirm(`Render ${r.images} image(s) with ${r.service} (${r.model})?\n\n${cost}`)) return;
+    r = await api("/api/render/start", {preset: $("#rPreset").value, items: items.map(t => ({text: t})), confirm_cost: true});
+  }
   items.forEach(t => RN.active.add(normText(t))); rnPaint();
   rnPoll();
 }
@@ -1918,6 +1923,7 @@ async function rnPoll() {
 // ---- settings page
 async function rnOpenSettings() {
   const st = await api("/api/settings/all"); await rnLoadState();
+  try { RN.providers = (await api("/api/render/providers")).providers; } catch { RN.providers = {}; }
   const wfOpts = RN.workflows.map(w => `<option>${esc(w.name)}</option>`).join("");
   $("#setBody").innerHTML = `
     <h3>Folders</h3>
@@ -1932,6 +1938,7 @@ async function rnOpenSettings() {
     <h3>ComfyUI</h3>
     <label class="setrow"><span>address</span><input type="text" data-set="comfyui_url" value="${esc(st.comfyui_url || "")}"></label>
     <label class="setrow"><span>LoRA Catalog address</span><input type="text" data-set="lora_catalog_url" value="${esc(st.lora_catalog_url || "")}" placeholder="e.g. http://127.0.0.1:8765 - Review links each sweep to its Sweeps page"></label>
+    ${rnApiKeysHtml()}
     <label class="setrow"><span>GPU sharing</span><select data-set="render_gpu"><option value="shared" ${st.render_gpu !== "separate" ? "selected" : ""}>one GPU - unload the LM Studio model while rendering (reloaded for the next prompt job)</option><option value="separate" ${st.render_gpu === "separate" ? "selected" : ""}>separate GPUs - render while prompts are written</option></select></label>
     <label class="setrow"><span></span><span><input type="checkbox" data-set="render_free_after" ${st.render_free_after !== false ? "checked" : ""}> one GPU: ask ComfyUI to free its VRAM after a render batch</span></label>
     <div><button class="primary" id="setSave">Save settings</button></div>
@@ -1954,6 +1961,12 @@ async function rnOpenSettings() {
     const d = await api("/api/render/fromlast", {name: n}); toast(`saved ${d.name} (${d.nodes} nodes)`); rnOpenSettings(); };
   $("#wfPick").onchange = rnShowMap; rnShowMap();
   $("#rpPick").onchange = rnShowPreset; rnShowPreset();
+  document.querySelectorAll("[data-apikey]").forEach(el => el.onchange = async () => {
+    if (!el.value.trim()) return;
+    await api("/api/render/apikey", {backend: el.dataset.apikey, key: el.value.trim()}); el.value = ""; toast("key saved"); rnOpenSettings(); });
+  document.querySelectorAll("[data-apikeyclear]").forEach(b => b.onclick = async () => {
+    if (!confirm("Remove the saved key?")) return;
+    await api("/api/render/apikey", {backend: b.dataset.apikeyclear, key: ""}); toast("key removed"); rnOpenSettings(); });
 }
 async function rnShowMap() {
   const n = $("#wfPick").value; if (!n) { $("#wfMap").innerHTML = '<div class="muted">no workflows yet</div>'; return; }
@@ -1967,20 +1980,54 @@ async function rnShowMap() {
     await api("/api/render/map", {name: n, mapping: m}); toast("mapping saved"); };
 }
 function rnShowPreset() {
-  const p = RN.presets.find(x => x.name === $("#rpPick").value) || {name: "", workflow: (RN.workflows[0] || {}).name || "", batch: 1, seed_mode: "random", seed: 0, width: 0, height: 0, negative: ""};
+  const p = RN.presets.find(x => x.name === $("#rpPick").value) || {name: "", backend: "comfyui", workflow: (RN.workflows[0] || {}).name || "", batch: 1, seed_mode: "random", seed: 0, width: 0, height: 0, negative: "", model: "", quality: "", price: 0};
+  const PV = RN.providers || {};
   $("#rpForm").innerHTML = `
     <label class="setrow"><span>name</span><input type="text" id="rpName" value="${esc(p.name)}"></label>
-    <label class="setrow"><span>workflow</span><select id="rpWf">${RN.workflows.map(w => `<option ${w.name === p.workflow ? "selected" : ""}>${esc(w.name)}</option>`).join("")}</select></label>
+    <label class="setrow"><span>render with</span><select id="rpBackend"><option value="comfyui">ComfyUI (your workflow)</option>${Object.entries(PV).map(([k, v]) =>
+      `<option value="${k}" ${p.backend === k ? "selected" : ""}>${esc(v.label)}${v.has_key ? "" : " - no key yet"}</option>`).join("")}</select></label>
+    <div id="rpComfy">
+      <label class="setrow"><span>workflow</span><select id="rpWf">${RN.workflows.map(w => `<option ${w.name === p.workflow ? "selected" : ""}>${esc(w.name)}</option>`).join("")}</select></label>
+      <label class="setrow"><span>negative (optional)</span><input type="text" id="rpNeg" value="${esc(p.negative || "")}" placeholder="empty = the workflow's own"></label>
+    </div>
+    <div id="rpApi">
+      <label class="setrow"><span>model</span><span><select id="rpModel"></select> <input type="text" id="rpModelOther" placeholder="or another model id" style="width:200px"></span></label>
+      <label class="setrow"><span>quality</span><select id="rpQuality"></select></label>
+      <label class="setrow"><span>price per image (USD)</span><span><input type="number" id="rpPrice" min="0" step="0.001" value="${p.price || 0}" style="width:90px">
+        <span class="muted" style="font-size:12px">from the provider's pricing page - used for the cost check before each batch</span></span></label>
+    </div>
     <label class="setrow"><span>images per click</span><input type="number" id="rpBatch" min="1" max="8" value="${p.batch}" style="width:70px"></label>
     <label class="setrow"><span>seed</span><span><select id="rpSeedMode"><option value="random" ${p.seed_mode !== "fixed" ? "selected" : ""}>random each time</option><option value="fixed" ${p.seed_mode === "fixed" ? "selected" : ""}>fixed (compare prompt edits fairly)</option></select> <input type="number" id="rpSeed" value="${p.seed}" style="width:140px"></span></label>
-    <label class="setrow"><span>size (0 = workflow's own)</span><span><input type="number" id="rpW" value="${p.width}" style="width:80px"> x <input type="number" id="rpH" value="${p.height}" style="width:80px"></span></label>
-    <label class="setrow"><span>negative (optional)</span><input type="text" id="rpNeg" value="${esc(p.negative || "")}" placeholder="empty = the workflow's own"></label>
+    <label class="setrow"><span id="rpSizeLbl">size (0 = workflow's own)</span><span><input type="number" id="rpW" value="${p.width}" style="width:80px"> x <input type="number" id="rpH" value="${p.height}" style="width:80px"></span></label>
     <div><button class="primary" id="rpSave">Save preset</button></div>`;
+  const sync = () => {
+    const b = $("#rpBackend").value, api = b !== "comfyui", v = PV[b] || {};
+    $("#rpComfy").style.display = api ? "none" : ""; $("#rpApi").style.display = api ? "" : "none";
+    $("#rpSizeLbl").textContent = api ? "size (the nearest the service supports)" : "size (0 = workflow's own)";
+    if (api) {
+      const models = [...(v.models || [])]; if (p.backend === b && p.model && !models.includes(p.model)) models.unshift(p.model);
+      $("#rpModel").innerHTML = models.map(m => `<option ${p.backend === b && m === p.model ? "selected" : ""}>${esc(m)}</option>`).join("");
+      $("#rpQuality").innerHTML = (v.qualities || []).length ? v.qualities.map(q => `<option ${p.backend === b && q === p.quality ? "selected" : ""}>${esc(q)}</option>`).join("") : '<option value="">(not adjustable)</option>';
+    }
+  };
+  $("#rpBackend").value = p.backend || "comfyui"; $("#rpBackend").onchange = sync; sync();
   $("#rpSave").onclick = async () => {
-    const d = await api("/api/render/preset", {name: $("#rpName").value.trim(), workflow: $("#rpWf").value, batch: +$("#rpBatch").value || 1,
-      seed_mode: $("#rpSeedMode").value, seed: +$("#rpSeed").value || 0, width: +$("#rpW").value || 0, height: +$("#rpH").value || 0, negative: $("#rpNeg").value.trim()});
+    const b = $("#rpBackend").value;
+    const d = await api("/api/render/preset", {name: $("#rpName").value.trim(), backend: b, workflow: b === "comfyui" ? $("#rpWf").value : "",
+      batch: +$("#rpBatch").value || 1, seed_mode: $("#rpSeedMode").value, seed: +$("#rpSeed").value || 0, width: +$("#rpW").value || 0,
+      height: +$("#rpH").value || 0, negative: b === "comfyui" ? $("#rpNeg").value.trim() : "",
+      model: b === "comfyui" ? "" : ($("#rpModelOther").value.trim() || $("#rpModel").value), quality: b === "comfyui" ? "" : $("#rpQuality").value,
+      price: b === "comfyui" ? 0 : (+$("#rpPrice").value || 0)});
     toast("render preset saved: " + d.name); await rnLoadState(); $("#rPreset").value = d.name; rnOpenSettings();
   };
+}
+function rnApiKeysHtml() {
+  const PV = RN.providers || {};
+  return `<h3>Image APIs (render without ComfyUI)</h3>
+    <div class="muted" style="font-size:12.5px">Keys stay in this computer's settings.json and are never shown again or sent anywhere except to that service. Each service bills you for its images.</div>
+    ${Object.entries(PV).map(([k, v]) => `<label class="setrow"><span>${esc(v.label)}</span><span><input type="password" data-apikey="${k}" autocomplete="off"
+      placeholder="${v.has_key ? "saved - type a new key to replace it" : esc(v.key_hint)}" style="width:360px">
+      ${v.has_key ? `<button data-apikeyclear="${k}" title="Remove the saved key">remove</button>` : ""}</span></label>`).join("")}`;
 }
 function rnWire() {
   rnLoadState().catch(() => {});

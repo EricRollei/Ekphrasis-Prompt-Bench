@@ -225,7 +225,8 @@ def without_unload(wf: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 # ----------------------------------------------------------------------------------------------- presets
 PRESET_DEFAULTS = {"backend": "comfyui", "workflow": "", "batch": 1, "seed_mode": "random", "seed": 0,
-                   "width": 0, "height": 0, "negative": ""}
+                   "width": 0, "height": 0, "negative": "",
+                   "model": "", "quality": "", "price": 0.0}      # hosted image APIs (backend != comfyui)
 
 
 def list_presets() -> List[Dict[str, Any]]:
@@ -247,8 +248,16 @@ def save_preset(p: Dict[str, Any]) -> Dict[str, Any]:
     data["batch"] = max(1, min(8, int(data["batch"] or 1)))
     for k in ("seed", "width", "height"):
         data[k] = int(data[k] or 0)
-    if not data["workflow"]:
-        raise ValueError("choose a workflow")
+    data["price"] = max(0.0, float(data["price"] or 0))
+    if data["backend"] == "comfyui":
+        if not data["workflow"]:
+            raise ValueError("choose a workflow")
+    else:
+        from .image_apis import PROVIDERS
+        if data["backend"] not in PROVIDERS:
+            raise ValueError(f"unknown image API: {data['backend']}")
+        if not data["model"]:
+            raise ValueError("choose a model")
     os.makedirs(PRESET_DIR, exist_ok=True)
     with open(os.path.join(PRESET_DIR, name + ".json"), "w", encoding="utf-8") as h:
         json.dump(data, h, indent=1)
@@ -331,9 +340,15 @@ class RenderJob:
         if not items:
             raise ValueError("nothing to render")
         preset = get_preset(preset_name)
-        mapping = load_mapping(preset["workflow"])
-        if not mapping.get("prompt"):
-            raise ValueError(f"workflow '{preset['workflow']}' has no prompt field mapped - open Settings > Workflows")
+        if preset.get("backend", "comfyui") == "comfyui":
+            mapping = load_mapping(preset["workflow"])
+            if not mapping.get("prompt"):
+                raise ValueError(f"workflow '{preset['workflow']}' has no prompt field mapped - open Settings > Workflows")
+        else:
+            mapping = {}
+            key = (config.load_settings().get("api_keys") or {}).get(preset["backend"], "")
+            if not key:
+                raise ValueError("no API key for this image service - add it in Settings > Image APIs")
         with self.lock:
             if self.state.get("running"):
                 raise RuntimeError("a render is already running")
@@ -349,6 +364,8 @@ class RenderJob:
             self.state.update(kw)
 
     def _run(self, items, preset, mapping) -> None:
+        if preset.get("backend", "comfyui") != "comfyui":
+            return self._run_api(items, preset)
         s = config.load_settings()
         c = Comfy(s.get("comfyui_url"))
         try:
@@ -434,6 +451,58 @@ class RenderJob:
                 c.free()
             except RuntimeError:
                 pass
+        except Exception as exc:
+            traceback.print_exc()
+            self._set(last_error=f"{type(exc).__name__}: {exc}")
+        finally:
+            self._set(running=False, phase="done", current="", finished=time.time())
+
+
+    def _run_api(self, items, preset) -> None:
+        """Hosted image API backend: one request per image, no GPU swap; saved and indexed like ComfyUI renders."""
+        from . import image_apis
+        s = config.load_settings()
+        key = (s.get("api_keys") or {}).get(preset["backend"], "")
+        label = image_apis.PROVIDERS[preset["backend"]]["label"]
+        try:
+            out_dir = os.path.join(RENDER_DIR, _dt.date.today().isoformat())
+            os.makedirs(out_dir, exist_ok=True)
+            done = 0
+            for it in items:
+                text = " ".join(it["text"].split())
+                key_p = prompt_key(text)
+                w, h = int(preset.get("width") or 0), int(preset.get("height") or 0)
+                if it.get("canvas"):
+                    try:
+                        w, h = [int(x) for x in str(it["canvas"]).lower().split("x")]
+                    except ValueError:
+                        pass
+                for b in range(preset["batch"]):
+                    if self.cancel.is_set():
+                        raise InterruptedError
+                    seed = (int(preset["seed"]) + b) if preset["seed_mode"] == "fixed" else random.randrange(1, 2 ** 31)
+                    self._set(phase=f"{label} - {preset['model']}", current=text[:80])
+                    try:
+                        for k, (data, ext) in enumerate(image_apis.generate(preset["backend"], text, w, h, seed,
+                                                                          preset["model"], preset.get("quality", ""), key)):
+                            path = os.path.join(out_dir, f"{key_p}_{seed}_{k}{ext}")
+                            with open(path, "wb") as fh:
+                                fh.write(data)
+                            rec = {"key": key_p, "prompt": text, "path": path, "seed": seed, "preset": preset["name"],
+                                   "workflow": "", "backend": preset["backend"], "model": preset["model"],
+                                   "made": _dt.datetime.now().isoformat(timespec="seconds"), "card": it.get("card", "")}
+                            with open(INDEX, "a", encoding="utf-8") as fh:
+                                fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                            with self.lock:
+                                self.state["results"].append(rec)
+                    except Exception as exc:
+                        with self.lock:
+                            self.state["errors"] += 1
+                            self.state["last_error"] = f"{label}: {exc}"
+                    done += 1
+                    self._set(done=done)
+        except InterruptedError:
+            pass
         except Exception as exc:
             traceback.print_exc()
             self._set(last_error=f"{type(exc).__name__}: {exc}")

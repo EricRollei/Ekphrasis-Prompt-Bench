@@ -319,6 +319,29 @@ in a batch except the last, so checkpoints and LoRAs stay loaded between images 
 Renders are copied into `renders/` (and kept by ComfyUI as usual); each is linked to its prompt so its strip comes back
 later. Workflows, render presets and renders live in folders that are not part of the repository.
 
+## Rendering with hosted image services
+
+Instead of ComfyUI, a render preset can send prompts straight to a hosted image service - no local GPU needed:
+
+| Service | Models (as of November 2026) |
+|---|---|
+| Black Forest Labs | FLUX.2 pro / max / flex / klein, FLUX 1.1 pro and ultra |
+| OpenAI | GPT Image 2.6 Flare and Sunburst |
+| Ideogram | Ideogram 4.5, 4.6, 4.0 and 3.0 (structured Ideogram 4 JSON prompts work too) |
+| Google Gemini | Nano Banana 2.1, Gemini 3 Pro Image, 3.1 Flash Image |
+| xAI | Grok Imagine Image 2.0 |
+
+1. **Settings > Image APIs**: paste your key for the service. Keys are kept only in your local `settings.json`;
+   the page never shows them again.
+2. **Settings > Render presets**: make a preset, set *render with* to the service, pick the model and quality, the
+   size (mapped to the nearest size the service supports) and the **price per image** from the service's pricing page.
+   Another model id can be typed in when a service adds one.
+3. Choose the preset in the top bar and press render as usual. **Every batch asks for confirmation first**, with the
+   number of images and the estimated cost. Results appear under the prompt and in the renders folder like ComfyUI
+   renders.
+
+Each service bills you directly and applies its own content rules.
+
 ## Presets
 
 | Preset | For | Output |
