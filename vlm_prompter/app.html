@@ -412,6 +412,10 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
 .pmfolders { display:flex; flex-direction:column; gap:4px; font-size:12.5px; }
 .pmfolder { display:flex; gap:8px; align-items:center; }
 .pooltag { color:var(--accent); } .pooldirty { color:#b26a00; font-size:11.5px; }
+
+/* render preset: model capabilities (Nov 22) */
+.rpcaps { display:flex; flex-direction:column; gap:2px; border-left:3px solid var(--accent-soft); padding-left:8px; margin:4px 0; }
+.rpopts summary { cursor:pointer; font-size:12.5px; color:var(--muted); margin:4px 0; }
 </style>
 </head>
 <body>
@@ -2003,7 +2007,7 @@ async function rnShowMap() {
     await api("/api/render/map", {name: n, mapping: m}); toast("mapping saved"); };
 }
 function rnShowPreset() {
-  const p = RN.presets.find(x => x.name === $("#rpPick").value) || {name: "", backend: "comfyui", workflow: (RN.workflows[0] || {}).name || "", batch: 1, seed_mode: "random", seed: 0, width: 0, height: 0, negative: "", model: "", quality: "", price: 0};
+  const p = RN.presets.find(x => x.name === $("#rpPick").value) || {name: "", backend: "comfyui", workflow: (RN.workflows[0] || {}).name || "", batch: 1, seed_mode: "random", seed: 0, width: 0, height: 0, negative: "", model: "", quality: "", price: 0, aspect_ratio: "", resolution: "", extra: {}};
   const PV = RN.providers || {};
   $("#rpForm").innerHTML = `
     <label class="setrow"><span>name</span><input type="text" id="rpName" value="${esc(p.name)}"></label>
@@ -2012,35 +2016,99 @@ function rnShowPreset() {
     <div id="rpComfy">
       <label class="setrow"><span>workflow</span><select id="rpWf">${RN.workflows.map(w => `<option ${w.name === p.workflow ? "selected" : ""}>${esc(w.name)}</option>`).join("")}</select></label>
       <label class="setrow"><span>negative (optional)</span><input type="text" id="rpNeg" value="${esc(p.negative || "")}" placeholder="empty = the workflow's own"></label>
+      <label class="setrow"><span>size (0 = workflow's own)</span><span><input type="number" id="rpW" value="${p.width}" style="width:80px"> x <input type="number" id="rpH" value="${p.height}" style="width:80px"></span></label>
     </div>
     <div id="rpApi">
-      <label class="setrow"><span>model</span><span><select id="rpModel"></select> <input type="text" id="rpModelOther" placeholder="or another model id" style="width:200px"></span></label>
-      <label class="setrow"><span>quality</span><select id="rpQuality"></select></label>
+      <label class="setrow"><span>model</span><span id="rpModelBox"></span></label>
+      <div id="rpCaps" class="rpcaps"></div>
       <label class="setrow"><span>price per image (USD)</span><span><input type="number" id="rpPrice" min="0" step="0.001" value="${p.price || 0}" style="width:90px">
-        <span class="muted" style="font-size:12px">from the provider's pricing page - used for the cost check before each batch</span></span></label>
+        <span class="muted" style="font-size:12px">from the service's pricing page - used for the cost check before each batch</span></span></label>
     </div>
     <label class="setrow"><span>images per click</span><input type="number" id="rpBatch" min="1" max="8" value="${p.batch}" style="width:70px"></label>
-    <label class="setrow"><span>seed</span><span><select id="rpSeedMode"><option value="random" ${p.seed_mode !== "fixed" ? "selected" : ""}>random each time</option><option value="fixed" ${p.seed_mode === "fixed" ? "selected" : ""}>fixed (compare prompt edits fairly)</option></select> <input type="number" id="rpSeed" value="${p.seed}" style="width:140px"></span></label>
-    <label class="setrow"><span id="rpSizeLbl">size (0 = workflow's own)</span><span><input type="number" id="rpW" value="${p.width}" style="width:80px"> x <input type="number" id="rpH" value="${p.height}" style="width:80px"></span></label>
+    <label class="setrow" id="rpSeedRow"><span>seed</span><span><select id="rpSeedMode"><option value="random" ${p.seed_mode !== "fixed" ? "selected" : ""}>random each time</option><option value="fixed" ${p.seed_mode === "fixed" ? "selected" : ""}>fixed (compare prompt edits fairly)</option></select> <input type="number" id="rpSeed" value="${p.seed}" style="width:140px"></span></label>
     <div><button class="primary" id="rpSave">Save preset</button></div>`;
+  let caps = null;
+  const optInput = (name, spec, val) => {
+    const v = val !== undefined ? val : spec.default;
+    const lbl = esc(spec.label || name);
+    if (spec.type === "bool" || spec.type === "boolean")
+      return `<label class="setrow"><span>${lbl}</span><input type="checkbox" data-opt="${esc(name)}" data-kind="bool" ${v ? "checked" : ""}></label>`;
+    if (spec.type === "enum")
+      return `<label class="setrow"><span>${lbl}</span><select data-opt="${esc(name)}" data-kind="str"><option value="">(service default${spec.default != null ? ": " + esc(spec.default) : ""})</option>${spec.values.map(x => `<option ${String(v) === x && val !== undefined ? "selected" : ""}>${esc(x)}</option>`).join("")}</select></label>`;
+    const num = ["int", "integer", "number"].includes(spec.type);
+    return `<label class="setrow"><span>${lbl}</span><input type="${num ? "number" : "text"}" data-opt="${esc(name)}" data-kind="${spec.type === "number" ? "float" : num ? "int" : "str"}"
+      value="${val !== undefined ? esc(val) : ""}" placeholder="${spec.default != null ? "default " + esc(spec.default) : "service default"}${spec.min != null ? " (" + spec.min + "-" + spec.max + ")" : ""}" style="width:200px"></label>`;
+  };
+  const showCaps = () => {
+    const b = $("#rpBackend").value, sameModel = p.backend === b && p.model === rpModel();
+    if (!caps) { $("#rpCaps").innerHTML = ""; return; }
+    const ex = sameModel ? (p.extra || {}) : {};
+    const sel = (id, list, cur, label, hint) => list.length ? `<label class="setrow"><span>${label}</span><span><select id="${id}">${list.map(x =>
+      `<option ${x === cur ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>${hint ? ` <span class="muted" style="font-size:12px">${hint}</span>` : ""}</span></label>` : "";
+    const showWH = ["wh", "none"].includes(caps.size) || caps.wh_object || caps.wh_fields;
+    const opts = {...(caps.options || {}), ...(caps.fields || {})};
+    const optKeys = Object.keys(opts);
+    $("#rpCaps").innerHTML = `
+      ${caps.note ? `<div class="muted" style="font-size:12px;margin:2px 0 6px">${esc(caps.note)}</div>` : ""}
+      ${sel("rpRatio", caps.ratios || [], sameModel ? p.aspect_ratio : (caps.ratios || []).includes("1:1") ? "1:1" : "", "aspect ratio", "")}
+      ${sel("rpRes", (caps.resolutions || []).length ? caps.resolutions : (caps.presets || []), sameModel ? p.resolution : ((caps.resolutions || []).find(r => ["1k", "1K", "1MP"].includes(r)) || ""), caps.presets && caps.presets.length && !(caps.resolutions || []).length ? "size" : "resolution",
+            caps.size === "ratio_mp" ? "megapixels; the exact size follows the aspect ratio" : "")}
+      ${showWH ? `<label class="setrow"><span>width x height</span><span><input type="number" id="rpAW" value="${sameModel ? p.width || "" : ""}" style="width:80px"> x <input type="number" id="rpAH" value="${sameModel ? p.height || "" : ""}" style="width:80px">
+        <span class="muted" style="font-size:12px">${caps.size === "wh" ? "exact pixels" : "optional - used when no size preset is chosen"}</span></span></label>` : ""}
+      ${sel("rpQuality", caps.qualities || [], sameModel ? p.quality : "", "quality", "")}
+      ${optKeys.length ? `<details class="rpopts" ${optKeys.some(k => ex[k] !== undefined) || (caps.options && Object.keys(caps.options).length) ? "open" : ""}><summary>${caps.fields ? "model options (from the model's own schema)" : "model options"} - ${optKeys.length}</summary>
+        ${optKeys.map(k => optInput(k, opts[k], ex[k])).join("")}</details>` : ""}
+      <label class="setrow"><span>extra parameters (JSON)</span><input type="text" id="rpExtra" value="${esc(JSON.stringify(Object.fromEntries(Object.entries(ex).filter(([k]) => !optKeys.includes(k)))) === "{}" ? "" : JSON.stringify(Object.fromEntries(Object.entries(ex).filter(([k]) => !optKeys.includes(k)))))}"
+        placeholder='advanced: any other field the API takes, e.g. {"output_format": "png"}' style="width:100%"></label>`;
+    $("#rpSeedRow").style.display = caps.seed === false ? "none" : "";
+    if (caps.seed === false) $("#rpCaps").insertAdjacentHTML("beforeend", '<div class="muted" style="font-size:12px">This model takes no seed - every render is new.</div>');
+  };
+  const rpModel = () => { const o = $("#rpModelOther"); return (o && o.value.trim()) || ($("#rpModel") ? $("#rpModel").value : ""); };
+  const loadCaps = async () => {
+    caps = null; showCaps();
+    const b = $("#rpBackend").value, m = rpModel(); if (!m) return;
+    $("#rpCaps").innerHTML = '<div class="muted">reading the model ...</div>';
+    try { caps = (await api(`/api/render/caps?backend=${encodeURIComponent(b)}&model=${encodeURIComponent(m)}`)).caps; }
+    catch (e) { $("#rpCaps").innerHTML = `<div class="rwbadge">${esc(e.message)}</div>`; return; }
+    showCaps();
+  };
   const sync = () => {
-    const b = $("#rpBackend").value, api = b !== "comfyui", v = PV[b] || {};
-    $("#rpComfy").style.display = api ? "none" : ""; $("#rpApi").style.display = api ? "" : "none";
-    $("#rpSizeLbl").textContent = api ? "size (the nearest the service supports)" : "size (0 = workflow's own)";
-    if (api) {
+    const b = $("#rpBackend").value, api_ = b !== "comfyui", v = PV[b] || {};
+    $("#rpComfy").style.display = api_ ? "none" : ""; $("#rpApi").style.display = api_ ? "" : "none";
+    $("#rpSeedRow").style.display = "";
+    if (!api_) return;
+    if (v.open) {
+      $("#rpModelBox").innerHTML = `<input type="text" id="rpModelOther" list="rpModelList" value="${esc(p.backend === b ? p.model : "")}" placeholder="model id, e.g. ${esc((v.examples || [])[0] || "")}" style="width:320px">
+        <datalist id="rpModelList">${(v.examples || []).map(x => `<option value="${esc(x)}">`).join("")}</datalist>
+        <button id="rpReadModel">read model</button> <span class="muted" style="font-size:12px">any model from the ${b === "fal" ? "fal.ai" : "Replicate"} catalogue</span>`;
+      $("#rpReadModel").onclick = e => { e.preventDefault(); loadCaps(); };
+    } else {
       const models = [...(v.models || [])]; if (p.backend === b && p.model && !models.includes(p.model)) models.unshift(p.model);
-      $("#rpModel").innerHTML = models.map(m => `<option ${p.backend === b && m === p.model ? "selected" : ""}>${esc(m)}</option>`).join("");
-      $("#rpQuality").innerHTML = (v.qualities || []).length ? v.qualities.map(q => `<option ${p.backend === b && q === p.quality ? "selected" : ""}>${esc(q)}</option>`).join("") : '<option value="">(not adjustable)</option>';
+      $("#rpModelBox").innerHTML = `<select id="rpModel">${models.map(m => `<option ${p.backend === b && m === p.model ? "selected" : ""}>${esc(m)}</option>`).join("")}</select>
+        <input type="text" id="rpModelOther" placeholder="or another model id" style="width:180px">`;
+      $("#rpModel").onchange = loadCaps; $("#rpModelOther").onchange = loadCaps;
     }
+    loadCaps();
   };
   $("#rpBackend").value = p.backend || "comfyui"; $("#rpBackend").onchange = sync; sync();
   $("#rpSave").onclick = async () => {
-    const b = $("#rpBackend").value;
-    const d = await api("/api/render/preset", {name: $("#rpName").value.trim(), backend: b, workflow: b === "comfyui" ? $("#rpWf").value : "",
-      batch: +$("#rpBatch").value || 1, seed_mode: $("#rpSeedMode").value, seed: +$("#rpSeed").value || 0, width: +$("#rpW").value || 0,
-      height: +$("#rpH").value || 0, negative: b === "comfyui" ? $("#rpNeg").value.trim() : "",
-      model: b === "comfyui" ? "" : ($("#rpModelOther").value.trim() || $("#rpModel").value), quality: b === "comfyui" ? "" : $("#rpQuality").value,
-      price: b === "comfyui" ? 0 : (+$("#rpPrice").value || 0)});
+    const b = $("#rpBackend").value, api_ = b !== "comfyui";
+    let extra = {};
+    if (api_) {
+      const raw = ($("#rpExtra") && $("#rpExtra").value.trim()) || "";
+      if (raw) { try { extra = JSON.parse(raw); } catch { return toast("extra parameters must be JSON, e.g. {\"output_format\": \"png\"}", 6000); } }
+      document.querySelectorAll("#rpCaps [data-opt]").forEach(el => {
+        const k = el.dataset.opt, kind = el.dataset.kind;
+        if (kind === "bool") { const spec = ((caps || {}).options || {})[k] || ((caps || {}).fields || {})[k] || {}; if (el.checked !== !!spec.default) extra[k] = el.checked; }
+        else if (el.value !== "") extra[k] = kind === "int" ? parseInt(el.value, 10) : kind === "float" ? parseFloat(el.value) : el.value;
+      });
+    }
+    const d = await api("/api/render/preset", {name: $("#rpName").value.trim(), backend: b, workflow: api_ ? "" : $("#rpWf").value,
+      batch: +$("#rpBatch").value || 1, seed_mode: $("#rpSeedMode").value, seed: +$("#rpSeed").value || 0,
+      width: api_ ? (+(($("#rpAW") || {}).value) || 0) : (+$("#rpW").value || 0), height: api_ ? (+(($("#rpAH") || {}).value) || 0) : (+$("#rpH").value || 0),
+      negative: api_ ? "" : $("#rpNeg").value.trim(), model: api_ ? rpModel() : "",
+      quality: api_ && $("#rpQuality") ? $("#rpQuality").value : "", aspect_ratio: api_ && $("#rpRatio") ? $("#rpRatio").value : "",
+      resolution: api_ && $("#rpRes") ? $("#rpRes").value : "", extra, price: api_ ? (+$("#rpPrice").value || 0) : 0});
     toast("render preset saved: " + d.name); await rnLoadState(); $("#rPreset").value = d.name; rnOpenSettings();
   };
 }

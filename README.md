@@ -325,17 +325,21 @@ Instead of ComfyUI, a render preset can send prompts straight to a hosted image 
 
 | Service | Models (as of November 2026) |
 |---|---|
-| Black Forest Labs | FLUX.2 pro / max / flex / klein, FLUX 1.1 pro and ultra |
+| Black Forest Labs | FLUX 3 Image and FLUX 3 Image Klein, FLUX.2 pro / max / flex / klein, FLUX 1.1 pro and ultra |
 | OpenAI | GPT Image 2.6 Flare and Sunburst |
 | Ideogram | Ideogram 4.5, 4.6, 4.0 and 3.0 (structured Ideogram 4 JSON prompts work too) |
-| Google Gemini | Nano Banana 2.1, Gemini 3 Pro Image, 3.1 Flash Image |
+| Google Gemini | Nano Banana 2.1, Gemini 3 Pro Image, 3.1 Flash Image and Flash Lite Image |
 | xAI | Grok Imagine Image 2.0 |
+| **fal.ai** | **any image model in the fal catalogue** - type its id, e.g. `fal-ai/nano-banana-2` |
+| **Replicate** | **any image model on Replicate** - type `owner/name` (or `owner/name:version`) |
 
 1. **Settings > Image APIs**: paste your key for the service. Keys are kept only in your local `settings.json`;
    the page never shows them again.
-2. **Settings > Render presets**: make a preset, set *render with* to the service, pick the model and quality, the
-   size (mapped to the nearest size the service supports) and the **price per image** from the service's pricing page.
-   Another model id can be typed in when a service adds one.
+2. **Settings > Render presets**: make a preset and set *render with* to the service. Pick the model - for fal.ai
+   and Replicate type the model id and press **read model**: the app reads that model's own input schema. The form
+   then offers exactly what the model accepts: its **aspect ratios**, **resolutions** or size presets, quality, its
+   **own options** (safety tolerance, steps, grounding, ...), whether it takes a seed, and a field for any other
+   parameter as JSON. Set the **price per image** from the service's pricing page.
 3. Choose the preset in the top bar and press render as usual. **Every batch asks for confirmation first**, with the
    number of images and the estimated cost. Results appear under the prompt and in the renders folder like ComfyUI
    renders.

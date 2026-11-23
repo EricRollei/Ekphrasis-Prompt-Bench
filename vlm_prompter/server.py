@@ -236,7 +236,7 @@ class Handler(BaseHTTPRequestHandler):
             route = {
                 "/": self.page, "/audit": self.audit_page, "/report": self.report_page, "/library": self.library_page,
                 "/api/pools": self.pools_list, "/api/pools/load": self.pools_load,
-                "/api/render/providers": self.r_providers,
+                "/api/render/providers": self.r_providers, "/api/render/caps": self.r_caps,
                 "/asset": self.asset,
                 "/api/library": self.library_api, "/api/library/forensics": self.library_forensics, "/api/lessons": self.lessons_list,
                 "/api/grade_suggestions": self.grade_suggestions, "/api/state": self.state,
@@ -836,6 +836,15 @@ class Handler(BaseHTTPRequestHandler):
             s["api_keys"] = keys
             config.save_settings(s)
         self._json({"backend": b, "has_key": bool(keys.get(b))})
+
+    def r_caps(self, q):
+        from . import image_apis
+        b = q.get("backend", "")
+        key = (config.load_settings().get("api_keys") or {}).get(b, "")
+        try:
+            self._json({"caps": image_apis.model_caps(b, q.get("model", "").strip(), key)})
+        except image_apis.ApiError as e:
+            self._error(str(e))
 
     def r_providers(self, q):
         from .image_apis import PROVIDERS

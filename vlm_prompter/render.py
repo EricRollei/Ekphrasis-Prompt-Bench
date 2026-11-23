@@ -226,7 +226,8 @@ def without_unload(wf: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 # ----------------------------------------------------------------------------------------------- presets
 PRESET_DEFAULTS = {"backend": "comfyui", "workflow": "", "batch": 1, "seed_mode": "random", "seed": 0,
                    "width": 0, "height": 0, "negative": "",
-                   "model": "", "quality": "", "price": 0.0}      # hosted image APIs (backend != comfyui)
+                   "model": "", "quality": "", "price": 0.0,      # hosted image APIs (backend != comfyui)
+                   "aspect_ratio": "", "resolution": "", "extra": {}}
 
 
 def list_presets() -> List[Dict[str, Any]]:
@@ -249,6 +250,11 @@ def save_preset(p: Dict[str, Any]) -> Dict[str, Any]:
     for k in ("seed", "width", "height"):
         data[k] = int(data[k] or 0)
     data["price"] = max(0.0, float(data["price"] or 0))
+    if not isinstance(data.get("extra"), dict):
+        try:
+            data["extra"] = json.loads(data["extra"]) if data.get("extra") else {}
+        except ValueError:
+            raise ValueError("extra parameters must be JSON")
     if data["backend"] == "comfyui":
         if not data["workflow"]:
             raise ValueError("choose a workflow")
@@ -483,8 +489,9 @@ class RenderJob:
                     seed = (int(preset["seed"]) + b) if preset["seed_mode"] == "fixed" else random.randrange(1, 2 ** 31)
                     self._set(phase=f"{label} - {preset['model']}", current=text[:80])
                     try:
-                        for k, (data, ext) in enumerate(image_apis.generate(preset["backend"], text, w, h, seed,
-                                                                          preset["model"], preset.get("quality", ""), key)):
+                        opts = {"aspect_ratio": preset.get("aspect_ratio", ""), "resolution": preset.get("resolution", ""),
+                                "width": w, "height": h, "quality": preset.get("quality", ""), "extra": preset.get("extra") or {}}
+                        for k, (data, ext) in enumerate(image_apis.generate(preset["backend"], text, seed, preset["model"], opts, key)):
                             path = os.path.join(out_dir, f"{key_p}_{seed}_{k}{ext}")
                             with open(path, "wb") as fh:
                                 fh.write(data)
