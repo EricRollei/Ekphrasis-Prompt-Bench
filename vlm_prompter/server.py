@@ -286,7 +286,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/api/rewrite/start": self.rw_start, "/api/rewrite/stop": self.rw_stop, "/api/rewrite/save": self.rw_save,
                 "/api/rewrite/load": self.rw_load, "/api/rewrite/split": self.rw_split,
                 "/api/render/start": self.r_start, "/api/render/stop": self.r_stop, "/api/wc/roll": self.wc_roll,
-                "/api/render/apikey": self.r_apikey, "/api/pgrade": self.pgrade,
+                "/api/render/apikey": self.r_apikey, "/api/pgrade": self.pgrade, "/api/layout": self.layout_from_image,
                 "/api/pools/save": self.pools_save, "/api/pools/delete": self.pools_delete, "/api/lessons/propose": self.lessons_propose,
                 "/api/lessons/status": self.lessons_status, "/api/pgrades": self.pgrades, "/api/library/export": self.library_export,
                 "/api/render/fromlast": self.r_fromlast, "/api/render/map": self.r_map,
@@ -839,6 +839,28 @@ class Handler(BaseHTTPRequestHandler):
             s["api_keys"] = keys
             config.save_settings(s)
         self._json({"backend": b, "has_key": bool(keys.get(b))})
+
+    def layout_from_image(self, body):
+        """Describe one image (usually a render) as an Ideogram 4 JSON prompt - boxes measured from the picture."""
+        from .generate import GenParams, generate_one
+        from .instructions import compose, load_presets
+        from .jobs import make_client, resolve_model
+        from .model_caps import caps_for
+        path = body.get("path", "")
+        if not os.path.isfile(path):
+            return self._error("image not found")
+        if self._lm_busy():
+            return self._error("LM Studio is busy with another run - wait for it first")
+        preset = load_presets(config.PRESETS_DIR)["ideogram4"]
+        client = make_client(config.load_settings())
+        try:
+            api_id, gguf, _ = resolve_model(client, "__loaded__")
+        except Exception as exc:
+            return self._error(f"load a vision model in LM Studio first ({exc})")
+        r = generate_one(client, path, preset, compose(preset, [], "", 1), GenParams(model=api_id, caps=caps_for(gguf)))
+        if r.error or not r.prompts:
+            return self._error(r.error or "the model returned nothing")
+        self._json({"prompt": r.prompts[0], "model": api_id})
 
     def r_caps(self, q):
         from . import image_apis

@@ -220,6 +220,12 @@ class RewriteJob:
             word = WORDS.get(spec.get("words") or "fresh", WORDS["fresh"])
             keep_rules = ("Keep these words and names exactly as written: " + ", ".join(keep) + "\n") if keep else ""
             keep_rules += "Keep any text in double quotes (text to be rendered in the image) exactly.\n"
+            if preset.output == "json" and "ideogram" in preset.id:   # no picture to measure: do not invent a layout
+                keep_rules += ("Bounding boxes: when no image is attached you cannot see where things are, so leave \"bbox\" "
+                               "out of every element (Ideogram accepts elements without boxes) - except where the prompt "
+                               "states a clear position (left, right, top, bottom, foreground, background, centre); then give "
+                               "one rough box on the 0-1000 grid that follows that wording. When an image is attached, place "
+                               "the boxes from the image.\n")
             temp = float(spec.get("temperature") or (0.9 if op == "variations" else 0.7))
             with self.lock:
                 self.state["model"] = api_id

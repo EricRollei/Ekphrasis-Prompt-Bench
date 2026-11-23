@@ -416,6 +416,19 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
 /* render preset: model capabilities (Nov 22) */
 .rpcaps { display:flex; flex-direction:column; gap:2px; border-left:3px solid var(--accent-soft); padding-left:8px; margin:4px 0; }
 .rpopts summary { cursor:pointer; font-size:12.5px; color:var(--muted); margin:4px 0; }
+
+/* Ideogram layout from a render (Nov 23) */
+.rthumb { position:relative; display:inline-block; }
+.rlay { position:absolute; right:4px; bottom:4px; padding:0 6px; font-size:13px; line-height:20px; border-radius:6px; opacity:0; transition:opacity .15s; }
+.rthumb:hover .rlay { opacity:.92; }
+.rlaytext { width:100%; box-sizing:border-box; min-height:300px; font:12px/1.45 ui-monospace, Consolas, monospace; resize:vertical; }
+
+.rlaypic { position:relative; width:300px; flex:0 0 300px; } .rlaypic img { width:100%; display:block; border-radius:8px; }
+#rlayBoxes { position:absolute; inset:0; }
+.rlaybox { position:absolute; border:2px solid #ff3b6b; border-radius:3px; box-shadow:0 0 0 1px rgba(0,0,0,.35); }
+.rlaybox.txt { border-color:#2fd3ff; }
+.rlaybox span { position:absolute; top:-1px; left:-1px; background:#ff3b6b; color:#fff; font:600 10px/14px system-ui; padding:0 4px; border-radius:0 0 3px 0; }
+.rlaybox.txt span { background:#2fd3ff; color:#000; }
 </style>
 </head>
 <body>
@@ -1894,7 +1907,34 @@ const RN = {presets: [], workflows: [], strips: {}, polling: false, since: 0, ac
 const rbar = () => `<div class="rbar"><button class="rbtn" title="Render this prompt with the render preset chosen at the top (ComfyUI)">&#9654; render</button><span class="rstrip"></span></div>`;
 const normText = t => (t || "").split(/\s+/).filter(Boolean).join(" ");
 function rbarText(bar) { const el = bar.previousElementSibling; return el ? (el.tagName === "TEXTAREA" ? el.value : el.innerText) : ""; }
-function rnThumb(r) { return `<a href="/thumb?side=2400&path=${encodeURIComponent(r.path)}" target="_blank" title="seed ${r.seed} - ${esc(r.preset)} - ${esc(r.made)}"><img src="${thumb(r.path, 220)}" alt=""></a>`; }
+function rnThumb(r) { return `<span class="rthumb"><a href="/thumb?side=2400&path=${encodeURIComponent(r.path)}" target="_blank" title="seed ${r.seed} - ${esc(r.preset)} - ${esc(r.made)}"><img src="${thumb(r.path, 220)}" alt=""></a><button class="rlay" data-layout="${esc(r.path)}" title="Ideogram layout: describe this render as Ideogram 4 JSON, with element boxes measured from the picture">&#9638;</button></span>`; }
+async function rnLayout(path) {                       // render -> Ideogram 4 JSON with real boxes, ready to edit and render
+  pmOpen(`<h3>Ideogram layout of this render</h3>
+    <div style="display:flex;gap:14px;align-items:flex-start"><div class="rlaypic"><img src="${thumb(path, 720)}" alt=""><div id="rlayBoxes"></div></div>
+    <div class="muted" style="font-size:12.5px">The vision model in LM Studio describes this picture as an Ideogram 4 JSON prompt. Each element's box is
+      measured from the picture, so Ideogram keeps the layout. Edit it if you like, choose an Ideogram render preset at the top, then press render.</div></div>
+    <div id="rlayBody" class="muted">describing the render&hellip;</div>
+    <div class="pmact"><button id="rlayCopy" disabled>copy</button><button class="primary" id="rlayClose">Close</button></div>`, true);
+  $("#rlayClose").onclick = pmClose;
+  try {
+    const d = await api("/api/layout", {path});
+    let pretty = d.prompt; try { pretty = JSON.stringify(JSON.parse(d.prompt), null, 2); } catch {}
+    $("#rlayBody").outerHTML = `<textarea id="rlayText" class="rlaytext" spellcheck="false">${esc(pretty)}</textarea>
+      <div class="rbar"><button class="rbtn" title="Render this layout with the render preset chosen at the top">&#9654; render</button><span class="rstrip"></span></div>`;
+    $("#rlayCopy").disabled = false;
+    const boxes = () => {                            // Ideogram bbox = [y_min, x_min, y_max, x_max] on a 0-1000 grid
+      let els = [];
+      try { els = ((JSON.parse($("#rlayText").value).compositional_deconstruction || {}).elements || []); } catch { $("#rlayBoxes").innerHTML = ""; return; }
+      $("#rlayBoxes").innerHTML = els.map((e, i) => Array.isArray(e.bbox) && e.bbox.length === 4 ? `<div class="rlaybox${e.type === "text" ? " txt" : ""}"
+        style="top:${e.bbox[0] / 10}%;left:${e.bbox[1] / 10}%;height:${(e.bbox[2] - e.bbox[0]) / 10}%;width:${(e.bbox[3] - e.bbox[1]) / 10}%"
+        title="${esc(e.desc || e.text || "")}"><span>${i + 1}${e.type === "text" ? " text" : ""}</span></div>` : "").join("");
+    };
+    $("#rlayText").addEventListener("input", boxes); boxes();
+    $("#rlayCopy").onclick = async () => { await navigator.clipboard.writeText($("#rlayText").value); toast("layout copied"); };
+    rnRefresh();
+  } catch (e) { $("#rlayBody").innerHTML = `<span class="rwbadge">${esc(e.message)}</span>`; }
+}
+document.addEventListener("click", e => { const b = e.target.closest("[data-layout]"); if (b) { e.preventDefault(); rnLayout(b.dataset.layout).catch(fail); } });
 function rnPaint() {                                  // fill every visible strip from RN.strips (keyed by normalised text)
   document.querySelectorAll(".rbar").forEach(bar => {
     const list = RN.strips[normText(rbarText(bar))] || [];
@@ -2045,7 +2085,7 @@ function rnShowPreset() {
     const ex = sameModel ? (p.extra || {}) : {};
     const sel = (id, list, cur, label, hint) => list.length ? `<label class="setrow"><span>${label}</span><span><select id="${id}">${list.map(x =>
       `<option ${x === cur ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>${hint ? ` <span class="muted" style="font-size:12px">${hint}</span>` : ""}</span></label>` : "";
-    const showWH = ["wh", "none"].includes(caps.size) || caps.wh_object || caps.wh_fields;
+    const showWH = !(caps.ratios || []).length && (["wh", "none"].includes(caps.size) || caps.wh_object || caps.wh_fields);   // aspect-ratio models need no pixels
     const opts = {...(caps.options || {}), ...(caps.fields || {})};
     const optKeys = Object.keys(opts);
     $("#rpCaps").innerHTML = `
