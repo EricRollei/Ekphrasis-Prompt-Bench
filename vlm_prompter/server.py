@@ -235,6 +235,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             route = {
                 "/": self.page, "/audit": self.audit_page, "/report": self.report_page, "/library": self.library_page,
+                "/api/pools": self.pools_list, "/api/pools/load": self.pools_load,
                 "/api/render/providers": self.r_providers,
                 "/asset": self.asset,
                 "/api/library": self.library_api, "/api/library/forensics": self.library_forensics, "/api/lessons": self.lessons_list,
@@ -285,7 +286,8 @@ class Handler(BaseHTTPRequestHandler):
                 "/api/rewrite/start": self.rw_start, "/api/rewrite/stop": self.rw_stop, "/api/rewrite/save": self.rw_save,
                 "/api/rewrite/load": self.rw_load, "/api/rewrite/split": self.rw_split,
                 "/api/render/start": self.r_start, "/api/render/stop": self.r_stop, "/api/wc/roll": self.wc_roll,
-                "/api/render/apikey": self.r_apikey, "/api/pgrade": self.pgrade, "/api/lessons/propose": self.lessons_propose,
+                "/api/render/apikey": self.r_apikey, "/api/pgrade": self.pgrade,
+                "/api/pools/save": self.pools_save, "/api/pools/delete": self.pools_delete, "/api/lessons/propose": self.lessons_propose,
                 "/api/lessons/status": self.lessons_status, "/api/pgrades": self.pgrades, "/api/library/export": self.library_export,
                 "/api/render/fromlast": self.r_fromlast, "/api/render/map": self.r_map,
                 "/api/render/preset": self.r_preset, "/api/render/for_many": self.r_for_many,
@@ -799,6 +801,24 @@ class Handler(BaseHTTPRequestHandler):
         from . import render
         render.save_mapping(body["name"], body.get("mapping") or {})
         self._json({"ok": True, "mapping": render.load_mapping(body["name"])})
+
+    # --- saved Photobash pools ---------------------------------------------------------------------------------
+    def pools_list(self, q):
+        from . import pools
+        self._json({"pools": pools.list_pools(q.get("q", ""))})
+
+    def pools_load(self, q):
+        from . import pools
+        self._json(pools.load_pool(q.get("id", "")))
+
+    def pools_save(self, body):
+        from . import pools
+        self._json(pools.save_pool(body.get("name", ""), body.get("description", ""), body.get("files") or [],
+                                   body.get("folders") or [], body.get("id") or None))
+
+    def pools_delete(self, body):
+        from . import pools
+        self._json(pools.delete_pool(body.get("id", "")))
 
     def r_apikey(self, body):
         from .image_apis import PROVIDERS

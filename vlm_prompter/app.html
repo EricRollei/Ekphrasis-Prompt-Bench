@@ -390,6 +390,28 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
 /* Nov 21: the splash picture sits in a rounded frame, like a mounted print */
 .spimg { background:transparent; padding:18px 18px 0; }
 .spimg img { border-radius:12px; border:1px solid var(--line); box-shadow:0 6px 18px rgba(0,0,0,.28); }
+
+/* saved pools (Nov 22) */
+.pmodal { position:fixed; inset:0; z-index:150; display:none; align-items:center; justify-content:center; background:rgba(20,18,15,.55); }
+.pmbox { background:var(--bg); border:1px solid var(--line); border-radius:12px; padding:16px 20px; width:min(560px, 94vw); max-height:90vh; overflow:auto;
+         box-shadow:0 18px 50px rgba(0,0,0,.4); display:flex; flex-direction:column; gap:10px; }
+.pmbox.wide { width:min(1100px, 96vw); }
+.pmbox h3 { margin:0; font-size:16px; }
+.pmact { display:flex; gap:8px; align-items:center; justify-content:flex-end; flex-wrap:wrap; border-top:1px solid var(--line); padding-top:10px; }
+.pmlist { display:flex; flex-direction:column; gap:8px; min-height:120px; }
+.pmcard { display:grid; grid-template-columns:auto 1fr auto; gap:12px; align-items:center; background:var(--panel, #fff); border:1px solid var(--line); border-radius:8px; padding:8px; }
+.pmthumbs { display:grid; grid-template-columns:repeat(4, 52px); gap:3px; } .pmthumbs img { width:52px; height:52px; object-fit:cover; border-radius:4px; }
+.pminfo { font-size:13px; display:flex; flex-direction:column; gap:2px; }
+.pmcbtns { display:flex; flex-direction:column; gap:4px; }
+.pmgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:8px; }
+.pmimg { position:relative; border:2px solid transparent; border-radius:8px; padding:3px; cursor:pointer; background:var(--soft); }
+.pmimg.on { border-color:var(--accent); background:var(--accent-soft); }
+.pmimg img { width:100%; aspect-ratio:1; object-fit:cover; border-radius:5px; display:block; }
+.pmname { font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px; }
+.pmx { position:absolute; top:6px; right:6px; padding:0 7px; border-radius:12px; font-size:14px; line-height:20px; opacity:.85; }
+.pmfolders { display:flex; flex-direction:column; gap:4px; font-size:12.5px; }
+.pmfolder { display:flex; gap:8px; align-items:center; }
+.pooltag { color:var(--accent); } .pooldirty { color:#b26a00; font-size:11.5px; }
 </style>
 </head>
 <body>
@@ -616,6 +638,7 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
       <button id="pbAddFolder" title="Add the folder open in the gallery as a POOL: each mix draws a random image from it">+ this folder as pool</button>
       <button id="pbAddSelPool" title="The images selected in the gallery become ONE source: each mix draws one of them at random (a hand-picked subset of a folder - no new folder needed)">+ selection as one pool</button>
       <button id="pbClear">clear sources</button>
+      <button id="pbLoadPool" title="Add a saved pool from your pool library as a source">&#8645; load pool</button>
     </div>
     <div id="pbSlots"></div>
     </div>
@@ -2424,7 +2447,7 @@ function pbAddSelectedTo(i) {
   s.files = s.files || [];
   const have = new Set(s.files.map(f => f.toLowerCase()));
   const add = sel.filter(f => !have.has(f.toLowerCase()));
-  s.files.push(...add); s.lastAdd = add;
+  s.files.push(...add); s.lastAdd = add; if (s.poolId && add.length) s.poolDirty = true;
   pbRenderSlots(); pbSave();
   toast(add.length ? `added ${add.length} image(s) to source ${i + 1}${sel.length > add.length ? ` (${sel.length - add.length} already in it)` : ""}` : "those images are already in this source");
 }
@@ -2435,12 +2458,138 @@ function pbUndoAdd(i) {
   else if (!s.folder && s.files.length === 1) { s.path = s.files[0]; delete s.files; }   // back to a single image
   pbRenderSlots(); pbSave();
 }
+// ---------------------------------------------------------------- saved pools (Nov 22): load / save / edit
+function pmOpen(html, wide) {
+  let m = $("#pmodal");
+  if (!m) {
+    m = document.createElement("div"); m.id = "pmodal"; m.className = "pmodal"; document.body.appendChild(m);
+    m.addEventListener("click", e => { if (e.target === m) pmClose(); });
+  }
+  m.innerHTML = `<div class="pmbox${wide ? " wide" : ""}">${html}</div>`; m.style.display = "flex"; return m;
+}
+function pmClose() { const m = $("#pmodal"); if (m) m.style.display = "none"; if (pmClose.after) { const f = pmClose.after; pmClose.after = null; f(); } }
+document.addEventListener("keydown", e => { if (e.key === "Escape" && $("#pmodal") && $("#pmodal").style.display === "flex") pmClose(); });
+function pbPoolTag(s) {
+  return s.poolName ? `<b class="pooltag" title="Saved pool${s.poolDesc ? ": " + esc(s.poolDesc) : ""}">${esc(s.poolName)}</b>${s.poolDirty ? ' <span class="pooldirty" title="Changed since it was saved - press save pool to update it">unsaved changes</span>' : ""} &middot; ` : "";
+}
+function pbSlotParts(s) {
+  return {files: s.files ? [...s.files] : (s.folder ? [] : [s.path]), folders: s.folder ? [...(s.folders || [s.path])] : []};
+}
+function pbSetParts(s, files, folders) {          // write files / folders back to a slot in its usual shape
+  if (folders.length) { s.folder = true; s.folders = folders; s.path = folders[0]; }
+  else { delete s.folder; delete s.folders; }
+  if (files.length > 1 || (files.length && folders.length)) { s.files = files; if (!folders.length) s.path = files[0]; }
+  else if (files.length === 1 && !folders.length) { delete s.files; s.path = files[0]; }
+  else delete s.files;
+  s.lastAdd = null;
+}
+async function pbPoolSave(i) {
+  const s = PB.slots[i], {files, folders} = pbSlotParts(s);
+  const parent = p => (p.split(/[\\/]/).slice(-2, -1)[0] || "");
+  const suggest = s.poolName || [...new Set([...folders.map(f => f.split(/[\\/]/).pop()), ...files.map(parent)])].filter(Boolean).slice(0, 3).join(" + ");
+  pmOpen(`<h3>Save pool</h3>
+    <div class="muted">${files.length} picked image(s) are copied into the pool library (up to 2048 px), so the pool keeps working if the originals move${folders.length ? `; the ${folders.length} folder(s) are kept as references` : ""}.</div>
+    <label class="setrow"><span>name</span><input type="text" id="pmName" value="${esc(suggest)}"></label>
+    <label class="setrow"><span>description</span><input type="text" id="pmDesc" value="${esc(s.poolDesc || "")}" placeholder="what this pool is good for - searchable when loading"></label>
+    <div class="pmact">${s.poolId ? `<button class="primary" id="pmUpdate">Update "${esc(s.poolName)}"</button><button id="pmNew">Save as a new pool</button>` : `<button class="primary" id="pmNew">Save pool</button>`}<button id="pmCancel">Cancel</button></div>`);
+  $("#pmName").focus(); $("#pmName").select();
+  const go = async update => {
+    const d = await api("/api/pools/save", {name: $("#pmName").value.trim(), description: $("#pmDesc").value.trim(), files, folders, id: update ? s.poolId : ""});
+    const l = await api(`/api/pools/load?id=${encodeURIComponent(d.id)}`);          // the slot now uses the saved copies
+    pbSetParts(s, l.files, folders);
+    Object.assign(s, {poolId: d.id, poolName: d.name, poolDesc: d.description, poolDirty: false});
+    pbRenderSlots(); pbSave(); pmClose();
+    toast(`saved pool "${d.name}": ${d.count} image(s)${folders.length ? ` + ${folders.length} folder(s)` : ""}${d.skipped.length ? ` - ${d.skipped.length} could not be read` : ""}`, 5000);
+  };
+  $("#pmNew").onclick = () => go(false).catch(fail);
+  if ($("#pmUpdate")) $("#pmUpdate").onclick = () => go(true).catch(fail);
+  $("#pmCancel").onclick = pmClose;
+}
+async function pbPoolLoad() {
+  if (PB.slots.length >= 4) return toast("photobash takes up to 4 sources - remove one first");
+  pmOpen(`<h3>Load a saved pool</h3>
+    <input type="text" id="pmQ" placeholder="search names, descriptions, folders, file names, dates" style="width:100%;box-sizing:border-box">
+    <div id="pmList" class="pmlist">loading...</div>
+    <div class="pmact"><button id="pmCancel">Close</button></div>`, true);
+  $("#pmCancel").onclick = pmClose;
+  const show = async () => {
+    const q = $("#pmQ").value.trim(), d = await api(`/api/pools?q=${encodeURIComponent(q)}`);
+    $("#pmList").innerHTML = d.pools.length ? d.pools.map(p => `<div class="pmcard">
+        <div class="pmthumbs">${p.thumbs.map(t => `<img src="${thumb(t, 160)}" alt="">`).join("")}</div>
+        <div class="pminfo"><b>${esc(p.name)}</b> <span class="muted">${p.count} image(s)${p.folders.length ? ` + ${p.folders.length} folder(s)` : ""} &middot; ${esc((p.updated || "").slice(0, 10))}</span>
+          ${p.description ? `<div>${esc(p.description)}</div>` : ""}
+          <div class="muted" style="font-size:11.5px">from ${esc([...p.source_folders, ...p.folders.map(f => f.split(/[\\/]/).pop())].join(", ") || "-")}</div></div>
+        <div class="pmcbtns"><button class="primary" data-pload="${esc(p.id)}">Load</button><button data-pdel="${esc(p.id)}" title="Delete this saved pool and its copies (the originals are not touched)">delete</button></div></div>`).join("")
+      : `<div class="muted" style="padding:20px">${q ? "No saved pool matches." : "No saved pools yet - build a source pool and press save pool."}</div>`;
+  };
+  let t; $("#pmQ").oninput = () => { clearTimeout(t); t = setTimeout(() => show().catch(fail), 250); };
+  $("#pmList").onclick = async e => {
+    const del = e.target.closest("[data-pdel]"), ld = e.target.closest("[data-pload]");
+    if (del) {
+      if (!confirm("Delete this saved pool and its copied images? The original images are not touched.")) return;
+      await api("/api/pools/delete", {id: del.dataset.pdel}); PB.slots.forEach(s => { if (s.poolId === del.dataset.pdel) { delete s.poolId; s.poolDirty = false; } });
+      pbRenderSlots(); pbSave(); show().catch(fail); return;
+    }
+    if (!ld) return;
+    if (PB.slots.length >= 4) return toast("photobash takes up to 4 sources");
+    const p = await api(`/api/pools/load?id=${encodeURIComponent(ld.dataset.pload)}`);
+    if (!p.files.length && !p.folders.length) return toast("nothing left to load - this pool's folders are missing", 7000);
+    const slot = {path: p.folders[0] || p.files[0], weight: 50, only: [], poolId: p.id, poolName: p.name, poolDesc: p.description, poolDirty: false};
+    pbSetParts(slot, p.files, p.folders);
+    PB.slots.push(slot); pbRenderSlots(); pbSave(); pmClose();
+    toast(`loaded pool "${p.name}"${p.missing_folders.length ? ` - folder(s) not found: ${p.missing_folders.join(", ")}` : ""}`, p.missing_folders.length ? 9000 : 3000);
+  };
+  show().catch(fail); $("#pmQ").focus();
+}
+function pbPoolEdit(i) {
+  const s = PB.slots[i], sel = new Set();
+  pmClose.after = () => {                          // on close: drop an emptied source, repaint
+    const {files, folders} = pbSlotParts(s);
+    if (!files.length && !folders.length) { const k = PB.slots.indexOf(s); if (k >= 0) PB.slots.splice(k, 1); }
+    pbRenderSlots(); pbSave();
+  };
+  const paint = () => {
+    const {files, folders} = pbSlotParts(s), others = PB.slots.map((x, k) => k).filter(k => PB.slots[k] !== s);
+    pmOpen(`<h3>Edit source ${PB.slots.indexOf(s) + 1}${s.poolName ? ` &middot; ${esc(s.poolName)}` : ""} <span class="muted" style="font-weight:400">${files.length} image(s)${folders.length ? ` + ${folders.length} folder(s)` : ""}</span></h3>
+      <div class="muted">Click images to select them, then remove them or move them to another source. Double-click opens an image full size; &times; removes one at once.</div>
+      ${folders.length ? `<div class="pmfolders">${folders.map((f, k) => `<div class="pmfolder">&#128193; ${esc(f)} <button data-rmfolder="${k}" title="Remove this folder from the pool">&times;</button></div>`).join("")}</div>` : ""}
+      <div class="pmgrid">${files.map((f, k) => `<div class="pmimg${sel.has(k) ? " on" : ""}" data-k="${k}" title="${esc(f)}"><img src="${thumb(f, 260)}" alt="">
+        <div class="pmname">${esc(f.split(/[\\/]/).pop())}</div><button class="pmx" data-rm="${k}" title="Remove from this source">&times;</button></div>`).join("") || '<div class="muted">no picked images</div>'}</div>
+      <div class="pmact"><span class="muted">${sel.size} selected</span>
+        <button id="pmAll">${sel.size === files.length && files.length ? "select none" : "select all"}</button>
+        <button id="pmRemove" ${sel.size ? "" : "disabled"}>Remove selected</button>
+        ${others.length ? `<span>move to <select id="pmTo">${others.map(k => `<option value="${k}">source ${k + 1}${PB.slots[k].poolName ? " - " + esc(PB.slots[k].poolName) : ""}</option>`).join("")}</select></span><button id="pmMove" ${sel.size ? "" : "disabled"}>Move selected</button>` : ""}
+        <button class="primary" id="pmDone">Done</button></div>`, true);
+    const change = (files2, folders2) => { pbSetParts(s, files2, folders2); if (s.poolId) s.poolDirty = true; sel.clear(); paint(); };
+    $("#pmodal .pmgrid").onclick = e => {
+      const rm = e.target.closest("[data-rm]");
+      if (rm) { const f = pbSlotParts(s).files; f.splice(+rm.dataset.rm, 1); return change(f, pbSlotParts(s).folders); }
+      const cell = e.target.closest(".pmimg"); if (!cell) return;
+      const k = +cell.dataset.k; sel.has(k) ? sel.delete(k) : sel.add(k); paint();
+    };
+    $("#pmodal .pmgrid").ondblclick = e => { const cell = e.target.closest(".pmimg"); if (cell) window.open(thumb(pbSlotParts(s).files[+cell.dataset.k], 4000), "_blank"); };
+    document.querySelectorAll("#pmodal [data-rmfolder]").forEach(b => b.onclick = () => {
+      const p = pbSlotParts(s); p.folders.splice(+b.dataset.rmfolder, 1); change(p.files, p.folders); });
+    $("#pmAll").onclick = () => { const n = pbSlotParts(s).files.length; if (sel.size === n) sel.clear(); else for (let k = 0; k < n; k++) sel.add(k); paint(); };
+    $("#pmRemove").onclick = () => { const p = pbSlotParts(s); change(p.files.filter((f, k) => !sel.has(k)), p.folders); };
+    if ($("#pmMove")) $("#pmMove").onclick = () => {
+      const p = pbSlotParts(s), t = PB.slots[+$("#pmTo").value], moving = p.files.filter((f, k) => sel.has(k));
+      const tp = pbSlotParts(t), have = new Set(tp.files.map(f => f.toLowerCase()));
+      pbSetParts(t, [...tp.files, ...moving.filter(f => !have.has(f.toLowerCase()))], tp.folders); if (t.poolId) t.poolDirty = true;
+      toast(`moved ${moving.length} image(s) to source ${PB.slots.indexOf(t) + 1}`);
+      change(p.files.filter((f, k) => !sel.has(k)), p.folders);
+    };
+    $("#pmDone").onclick = pmClose;
+  };
+  paint();
+}
+document.addEventListener("click", e => { if (e.target.id === "pbLoadPool") pbPoolLoad().catch(fail); });
 function pbRenderSlots() {
   $("#pbSlots").innerHTML = PB.slots.length ? PB.slots.map((s, i) => `<div class="pbslot" data-i="${i}">
       <div class="pbthumb">${pbSlotThumb(s)}</div>
       <div class="pbbody">
-        <div class="pbpath" title="${esc([...(s.folder ? (s.folders || [s.path]) : []), ...(s.files || [])].join("\n") || s.path)}">${i + 1}. ${pbSlotLabel(s)}</div>
-        <div class="pbpoolbtns">${s.folder ? `<button data-addf="${i}" title="Add the folder open in the gallery to this pool">+ add the gallery's folder</button>` : ""}<button data-adds="${i}" title="Add the images selected in the gallery to this source - from any folder. Repeat in other folders to cherry-pick one pool.">+ add selected images</button>${(s.files || []).length && (s.lastAdd || []).length ? `<button data-undo="${i}" title="Take out the ${s.lastAdd.length} image(s) added last">&minus; remove last added</button>` : ""}</div>
+        <div class="pbpath" title="${esc([...(s.folder ? (s.folders || [s.path]) : []), ...(s.files || [])].join("\n") || s.path)}">${i + 1}. ${pbPoolTag(s)}${pbSlotLabel(s)}</div>
+        <div class="pbpoolbtns">${s.folder ? `<button data-addf="${i}" title="Add the folder open in the gallery to this pool">+ add the gallery's folder</button>` : ""}<button data-adds="${i}" title="Add the images selected in the gallery to this source - from any folder. Repeat in other folders to cherry-pick one pool.">+ add selected images</button>${(s.files || []).length && (s.lastAdd || []).length ? `<button data-undo="${i}" title="Take out the ${s.lastAdd.length} image(s) added last">&minus; remove last added</button>` : ""}<button data-pedit="${i}" title="See every image in this source: remove some, or move them to another source">&#9998; edit pool</button><button data-psave="${i}" title="Save this source to your pool library (picked images are copied)">&#10515; save pool</button></div>
         <div class="pbw">weight <input type="range" min="0" max="100" value="${s.weight}" data-w="${i}"> <span>${s.weight}</span>
           <button data-rm="${i}" title="Remove this source" style="margin-left:auto">✕</button></div>
         <div class="pbfac">${PB.facets.map(f => `<button data-f="${f}" data-s="${i}" class="${s.only.includes(f) ? "on" : ""}" title="${s.only.includes(f) ? "click to stop using this aspect" : "use ONLY ticked aspects from this source"}">${f}</button>`).join("")}</div>
@@ -2528,6 +2677,8 @@ function pbWire() {
       s.folders.push(p); pbRenderSlots(); pbSave(); return; }
     const as = e.target.closest("[data-adds]"); if (as) { pbAddSelectedTo(+as.dataset.adds); return; }
     const un = e.target.closest("[data-undo]"); if (un) { pbUndoAdd(+un.dataset.undo); return; }
+    const pe = e.target.closest("[data-pedit]"); if (pe) { pbPoolEdit(+pe.dataset.pedit); return; }
+    const ps = e.target.closest("[data-psave]"); if (ps) { pbPoolSave(+ps.dataset.psave).catch(fail); return; }
     const f = e.target.closest("[data-f]"); if (f) { const s = PB.slots[+f.dataset.s]; const k = s.only.indexOf(f.dataset.f);
       if (k >= 0) s.only.splice(k, 1); else s.only.push(f.dataset.f); pbRenderSlots(); pbSave(); }
   };

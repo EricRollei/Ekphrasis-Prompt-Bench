@@ -20,3 +20,4 @@ assets/*.mp4
 assets/*.mov
 modifiers/learned_lessons.yaml
 assets/_originals/
+pools/
