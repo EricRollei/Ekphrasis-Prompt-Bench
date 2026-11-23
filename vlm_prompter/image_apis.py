@@ -100,8 +100,8 @@ PROVIDERS: Dict[str, Dict[str, Any]] = {
             "examples": ["fal-ai/flux-2-pro", "fal-ai/nano-banana-2", "fal-ai/ideogram/v3", "fal-ai/recraft/v3/text-to-image",
                          "fal-ai/qwen-image", "fal-ai/hidream-i1-full"]},
     "replicate": {"label": "Replicate (any model)", "key_hint": "Replicate API token (replicate.com/account/api-tokens)", "open": True,
-                  "examples": ["black-forest-labs/flux-2-pro", "google/nano-banana-pro", "ideogram-ai/ideogram-v3-quality",
-                               "recraft-ai/recraft-v3", "bytedance/seedream-4"]},
+                  "examples": ["ideogram-ai/ideogram-4-5", "minimax/image-01", "recraft-ai/recraft-v3",
+                               "recraft-ai/recraft-v4-pro-svg", "black-forest-labs/flux-2-pro", "google/nano-banana-pro"]},
 }
 for _p, _m in MODELS.items():
     PROVIDERS[_p]["models"] = list(_m)
@@ -149,6 +149,9 @@ def _ext(data: bytes) -> str:
         return ".jpg"
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return ".webp"
+    head = data[:512].lstrip().lower()
+    if head.startswith(b"<svg") or (head.startswith(b"<?xml") and b"<svg" in data[:2048].lower()):
+        return ".svg"                                          # vector output (e.g. Recraft V4 Pro SVG)
     return ".png"
 
 

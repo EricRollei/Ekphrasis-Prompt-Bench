@@ -399,6 +399,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def thumb(self, q):
         path = q.get("path", "")
+        if path.lower().endswith(".svg") and os.path.isfile(path):   # vector renders: the browser draws them itself
+            with open(path, "rb") as handle:
+                return self._send(200, handle.read(), "image/svg+xml")
         if not (os.path.isfile(path) and is_image(path)):
             return self._error("not an image", 404)
         side = max(64, min(1600, int(q.get("side", 256))))
