@@ -50,7 +50,7 @@ import yaml
 from PIL import Image, ImageOps
 
 from . import config
-from .images import IMAGE_EXTS, discover, is_image, load_rgb, natural_key
+from .images import IMAGE_EXTS, discover, is_image, is_media, is_video, load_rgb, natural_key, video_poster
 from .instructions import compose, load_modifiers, load_presets, parse_modifier_args
 from .jobs import USE_LOADED, JobSpec, make_client, model_modes, plan_outputs, run_generation, write_outputs
 
@@ -121,8 +121,8 @@ def _thumb(path: str, side: int) -> bytes:
     if os.path.isfile(cached):
         with open(cached, "rb") as handle:
             return handle.read()
-    img = Image.open(path)
-    if img.format == "JPEG":                      # decode at 1/2..1/8 scale straight from the JPEG (much faster)
+    img = video_poster(path) if is_video(path) else Image.open(path)
+    if getattr(img, "format", None) == "JPEG":                      # decode at 1/2..1/8 scale straight from the JPEG (much faster)
         img.draft("RGB", (side * 2, side * 2))
     img = ImageOps.exif_transpose(img)
     if img.mode in ("RGBA", "LA", "P"):
@@ -164,10 +164,13 @@ def _ls(path: str, suffix: str, json_suffix: str = ".prompt.json") -> Dict:
             if e.is_dir():
                 if not e.name.startswith(("$", ".")) and e.name != "System Volume Information":
                     dirs.append({"name": e.name, "path": e.path})
-            elif is_image(e.name):                  # slim rows: n = name, p = has a prompt file (1/0)
+            elif is_media(e.name):                  # slim rows: n = name, p = has a prompt file (1/0), v = video
                 stem = os.path.splitext(e.name)[0]
                 has = (stem + suffix).lower() in names or (stem + json_suffix).lower() in names
-                images.append({"n": e.name, "p": 1 if has else 0})
+                row = {"n": e.name, "p": 1 if has else 0}
+                if is_video(e.name):
+                    row["v"] = 1
+                images.append(row)
         except OSError:
             continue
     parent = os.path.dirname(path)
@@ -235,6 +238,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             route = {
                 "/": self.page, "/audit": self.audit_page, "/report": self.report_page, "/library": self.library_page,
+                "/media": self.media,
                 "/api/pools": self.pools_list, "/api/pools/load": self.pools_load,
                 "/api/render/providers": self.r_providers, "/api/render/caps": self.r_caps,
                 "/asset": self.asset,
@@ -397,12 +401,51 @@ class Handler(BaseHTTPRequestHandler):
                 config.save_settings(s)
         self._json(result)
 
+    def media(self, q):
+        """The original file, with byte ranges so the browser can seek in videos."""
+        import mimetypes
+        path = q.get("path", "")
+        if not (os.path.isfile(path) and (is_media(path) or path.lower().endswith(".svg"))):
+            return self._error("not found", 404)
+        size = os.path.getsize(path)
+        ctype = mimetypes.guess_type(path)[0] or "application/octet-stream"
+        start, end, status = 0, size - 1, 200
+        rng = self.headers.get("Range") or ""
+        if rng.startswith("bytes="):
+            a, _, b = rng[6:].split(",")[0].partition("-")
+            if a.strip():
+                start = int(a)
+                end = min(int(b), size - 1) if b.strip() else size - 1
+            elif b.strip():
+                start = max(0, size - int(b))
+            status = 206
+        length = max(0, end - start + 1)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Length", str(length))
+            if status == 206:
+                self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+            self.end_headers()
+            with open(path, "rb") as handle:
+                handle.seek(start)
+                left = length
+                while left > 0:
+                    chunk = handle.read(min(1 << 20, left))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    left -= len(chunk)
+        except (ConnectionError, BrokenPipeError):
+            pass
+
     def thumb(self, q):
         path = q.get("path", "")
         if path.lower().endswith(".svg") and os.path.isfile(path):   # vector renders: the browser draws them itself
             with open(path, "rb") as handle:
                 return self._send(200, handle.read(), "image/svg+xml")
-        if not (os.path.isfile(path) and is_image(path)):
+        if not (os.path.isfile(path) and is_media(path)):
             return self._error("not an image", 404)
         side = max(64, min(1600, int(q.get("side", 256))))
         self._send(200, _thumb(path, side), "image/jpeg")
@@ -416,7 +459,7 @@ class Handler(BaseHTTPRequestHandler):
         rel = self.headers.get("X-Filename", "upload.png")
         batch = _SAFE_NAME.sub("_", self.headers.get("X-Batch", "") or time.strftime("%Y%m%d_%H%M%S"))
         parts = [(_SAFE_NAME.sub("_", p) or "_") for p in re.split(r"[\\/]+", rel) if p not in ("", ".", "..")]
-        if not parts or not is_image(parts[-1]):
+        if not parts or not is_media(parts[-1]):
             self.rfile.read(n)
             return self._error("not an image file")
         root = os.path.join(STAGING_DIR, batch)

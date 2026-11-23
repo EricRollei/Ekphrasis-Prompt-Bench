@@ -127,6 +127,13 @@ def _parse_json(text: str) -> Dict[str, Any]:
 
 
 def _image_url(path: str, side: int = 1024) -> str:
+    from .images import contact_sheet, is_video
+    if is_video(path):                               # a video render / source is judged from its contact sheet
+        im = contact_sheet(path)
+        im.thumbnail((side * 2, side * 2), Image.LANCZOS)
+        buf = io.BytesIO()
+        im.save(buf, "JPEG", quality=88)
+        return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
     with Image.open(path) as im:
         im = ImageOps.exif_transpose(im).convert("RGB")
         im.thumbnail((side, side), Image.LANCZOS)

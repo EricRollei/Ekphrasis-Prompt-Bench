@@ -67,6 +67,14 @@ MODELS: Dict[str, Dict[str, Dict[str, Any]]] = {
         "flux-pro-1.1-ultra": _cap("ratio", ratios=R_ULTRA,
                                    options={"raw": {"type": "bool", "default": False, "label": "raw (candid photographic look)"}}),
         "flux-pro-1.1": _cap("ratio_mp", ratios=R11, resolutions=["1MP"], multiple=32, max_side=1440),
+        "flux-3-video": _cap("ratio_res", ratios=["auto", "21:9", "2:1", "16:9", "4:3", "1:1", "3:4", "9:16", "9:21"],
+                             resolutions=["hd", "fhd", "qhd", "uhd"], seed=False, media="video",
+                             options={"duration": {"type": "enum", "values": ["auto"] + [str(s) for s in range(5, 21)],
+                                                   "default": "auto", "label": "duration (seconds)"},
+                                      "generate_audio": {"type": "bool", "default": True, "label": "generate audio"},
+                                      "draft": {"type": "bool", "default": False, "label": "draft (fast preview)"},
+                                      "safety_tolerance": _SAFETY},
+                             note="FLUX 3 video: 5-20 s with synchronized sound. Billed per second of video."),
     },
     "openai": {
         m: _cap("preset", presets=["1024x1024", "1536x1024", "1024x1536", "auto"], seed=False, qualities=["auto", "low", "medium", "high"])
@@ -98,10 +106,11 @@ PROVIDERS: Dict[str, Dict[str, Any]] = {
     "xai": {"label": "xAI (Grok Imagine)", "key_hint": "xAI API key (console.x.ai)"},
     "fal": {"label": "fal.ai (any model)", "key_hint": "fal API key (fal.ai/dashboard/keys)", "open": True,
             "examples": ["fal-ai/flux-2-pro", "fal-ai/nano-banana-2", "fal-ai/ideogram/v3", "fal-ai/recraft/v3/text-to-image",
-                         "fal-ai/qwen-image", "fal-ai/hidream-i1-full"]},
+                         "fal-ai/qwen-image", "lightricks/ltx-2.5/text-to-video/pro", "blackforestlabs/flux-3-max/text-to-video"]},
     "replicate": {"label": "Replicate (any model)", "key_hint": "Replicate API token (replicate.com/account/api-tokens)", "open": True,
                   "examples": ["ideogram-ai/ideogram-4-5", "minimax/image-01", "recraft-ai/recraft-v3",
-                               "recraft-ai/recraft-v4-pro-svg", "black-forest-labs/flux-2-pro", "google/nano-banana-pro"]},
+                               "recraft-ai/recraft-v4-pro-svg", "black-forest-labs/flux-2-pro", "google/nano-banana-pro",
+                               "minimax/hailuo-2.3", "bytedance/seedance-1-pro"]},
 }
 for _p, _m in MODELS.items():
     PROVIDERS[_p]["models"] = list(_m)
@@ -149,6 +158,10 @@ def _ext(data: bytes) -> str:
         return ".jpg"
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return ".webp"
+    if data[4:8] == b"ftyp":
+        return ".mov" if data[8:10] == b"qt" else ".mp4"
+    if data[:4] == b"\x1a\x45\xdf\xa3":
+        return ".webm"
     head = data[:512].lstrip().lower()
     if head.startswith(b"<svg") or (head.startswith(b"<?xml") and b"<svg" in data[:2048].lower()):
         return ".svg"                                          # vector output (e.g. Recraft V4 Pro SVG)
@@ -195,6 +208,16 @@ def _size(opts: Dict[str, Any], caps: Dict[str, Any]) -> Tuple[str, str]:
 def _bfl(prompt, model, seed, opts, caps, key) -> List[bytes]:
     ratio, res = _size(opts, caps)
     body: Dict[str, Any] = {"prompt": prompt}
+    if model == "flux-3-video":                                # text-to-video, or image-to-video from a start frame
+        body.update({"mode": "t2v", "aspect_ratio": ratio, "resolution": res or "hd"})
+        if opts.get("image"):
+            import base64 as _b64
+            with open(opts["image"], "rb") as fh:
+                body.update({"mode": "i2v", "keyframes": [_b64.b64encode(fh.read()).decode("ascii")]})
+        for k, v in (opts.get("extra") or {}).items():
+            if k in caps.get("options", {}):
+                body[k] = int(v) if k == "duration" and str(v).isdigit() else v
+        return _bfl_poll(_http("POST", "https://api.bfl.ai/v1/flux-3-video", {"x-key": key, "accept": "application/json"}, body), key)
     if caps["size"] == "ratio_res":                            # FLUX 3: aspect ratio + resolution tier
         body["aspect_ratio"] = ratio
         body["resolution"] = res or "1k"
@@ -210,19 +233,26 @@ def _bfl(prompt, model, seed, opts, caps, key) -> List[bytes]:
     if seed is not None and caps.get("seed"):
         body["seed"] = int(seed) % 4294967295
     body.update({k: v for k, v in (opts.get("extra") or {}).items() if k in caps.get("options", {}) or caps.get("loose")})
-    sub = _http("POST", f"https://api.bfl.ai/v1/{model}", {"x-key": key, "accept": "application/json"}, body)
+    return _bfl_poll(_http("POST", f"https://api.bfl.ai/v1/{model}", {"x-key": key, "accept": "application/json"}, body), key)
+
+
+def _bfl_poll(sub: Dict[str, Any], key: str) -> List[bytes]:
     poll = sub.get("polling_url") or f"https://api.bfl.ai/v1/get_result?id={sub.get('id')}"
-    deadline = time.time() + 600
+    deadline = time.time() + 1800                              # videos can take several minutes
     while time.time() < deadline:
-        time.sleep(1.5)
+        time.sleep(2)
         r = _http("GET", poll, {"x-key": key, "accept": "application/json"})
         st = r.get("status") if isinstance(r, dict) else None
         if st == "Ready":
-            return [_download(r["result"]["sample"])]
-        if st in ("Pending", "Reasoning", "Generating", "Queued", "Processing"):
+            res = r.get("result") or {}
+            url = res.get("sample") or res.get("video") or (_urls(res) or [None])[0]
+            if not url:
+                raise ApiError(f"BFL: finished but no file in the result ({str(res)[:200]})")
+            return [_download(url)]
+        if st in ("Pending", "Reasoning", "Generating", "Queued", "Processing", "Upsampling"):
             continue
         raise ApiError(f"BFL: {st or r} {(r.get('details') if isinstance(r, dict) else '') or ''}".strip())
-    raise ApiError("BFL: no result after 10 minutes")
+    raise ApiError("BFL: no result after 30 minutes")
 
 
 def _openai(prompt, model, seed, opts, caps, key) -> List[bytes]:
@@ -435,6 +465,10 @@ def replicate_caps(model: str, key: str) -> Dict[str, Any]:
     return caps
 
 
+START_FIELDS = ("first_frame_image", "start_image", "first_frame", "start_frame", "image", "image_url", "input_image",
+                "first_frame_url", "start_image_url")
+
+
 def _schema_body(prompt: str, seed, opts: Dict[str, Any], caps: Dict[str, Any]) -> Dict[str, Any]:
     body: Dict[str, Any] = {"prompt": prompt}
     ratio, res = _size(opts, caps)
@@ -457,6 +491,15 @@ def _schema_body(prompt: str, seed, opts: Dict[str, Any], caps: Dict[str, Any]) 
     if caps.get("count_field"):
         body[caps["count_field"]] = 1
     body.update(opts.get("extra") or {})
+    if opts.get("image"):                               # image-to-video: the model's own start-frame field
+        fields = caps.get("fields") or {}
+        name = next((f for f in START_FIELDS if f in fields), None)
+        if not name:
+            raise ApiError("this model has no start-image input in its schema - untick 'start frame' in the preset")
+        import base64 as _b64
+        import mimetypes as _mt
+        with open(opts["image"], "rb") as fh:
+            body[name] = f"data:{_mt.guess_type(opts['image'])[0] or 'image/png'};base64," + _b64.b64encode(fh.read()).decode("ascii")
     return body
 
 
@@ -471,7 +514,7 @@ def _urls(out: Any) -> List[str]:
         if isinstance(out.get("url"), str):
             urls.append(out["url"])
         else:
-            for k in ("images", "image", "output", "outputs"):
+            for k in ("images", "image", "video", "videos", "output", "outputs"):
                 if k in out:
                     urls += _urls(out[k])
     return urls
@@ -484,7 +527,7 @@ def _fal(prompt, model, seed, opts, caps, key) -> List[bytes]:
     status_url, response_url = sub.get("status_url"), sub.get("response_url")
     if not status_url:
         raise ApiError(f"fal: unexpected reply {str(sub)[:200]}")
-    deadline = time.time() + 900
+    deadline = time.time() + 1800
     while time.time() < deadline:
         time.sleep(1.5)
         st = _http("GET", status_url, head)
@@ -498,7 +541,7 @@ def _fal(prompt, model, seed, opts, caps, key) -> List[bytes]:
             if isinstance(out, dict) and any(out.get("has_nsfw_concepts") or []):
                 raise ApiError("fal's safety checker blanked the image (has_nsfw_concepts)")
             return [_download(u) for u in urls[:1]]
-    raise ApiError("fal: no result after 15 minutes")
+    raise ApiError("fal: no result after 30 minutes")
 
 
 def _replicate(prompt, model, seed, opts, caps, key) -> List[bytes]:
@@ -508,7 +551,7 @@ def _replicate(prompt, model, seed, opts, caps, key) -> List[bytes]:
         p = _http("POST", "https://api.replicate.com/v1/predictions", head, {**body, "version": model})
     else:
         p = _http("POST", f"https://api.replicate.com/v1/models/{model}/predictions", head, body)
-    deadline = time.time() + 900
+    deadline = time.time() + 1800
     while p.get("status") not in ("succeeded", "failed", "canceled") and time.time() < deadline:
         time.sleep(2)
         p = _http("GET", p["urls"]["get"], {"Authorization": f"Bearer {key}"})

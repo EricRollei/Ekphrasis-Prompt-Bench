@@ -227,7 +227,8 @@ def without_unload(wf: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 PRESET_DEFAULTS = {"backend": "comfyui", "workflow": "", "batch": 1, "seed_mode": "random", "seed": 0,
                    "width": 0, "height": 0, "negative": "",
                    "model": "", "quality": "", "price": 0.0,      # hosted image APIs (backend != comfyui)
-                   "aspect_ratio": "", "resolution": "", "extra": {}}
+                   "aspect_ratio": "", "resolution": "", "extra": {},
+                   "start_frame": False}                        # image-to-video: each prompt's source image starts the clip
 
 
 def list_presets() -> List[Dict[str, Any]]:
@@ -250,6 +251,7 @@ def save_preset(p: Dict[str, Any]) -> Dict[str, Any]:
     for k in ("seed", "width", "height"):
         data[k] = int(data[k] or 0)
     data["price"] = max(0.0, float(data["price"] or 0))
+    data["start_frame"] = bool(data.get("start_frame"))
     if not isinstance(data.get("extra"), dict):
         try:
             data["extra"] = json.loads(data["extra"]) if data.get("extra") else {}
@@ -420,7 +422,8 @@ class RenderJob:
                     try:
                         pid = c.queue(wf)
                         entry = c.wait(pid, self.cancel)
-                        images = [im for out in (entry.get("outputs") or {}).values() for im in out.get("images", [])
+                        images = [im for out in (entry.get("outputs") or {}).values()
+                                  for im in out.get("images", []) + out.get("gifs", []) + out.get("videos", [])
                                   if im.get("type") == "output"]
                         if not images:                       # only previews: take the last temp image
                             images = [im for out in (entry.get("outputs") or {}).values()
@@ -489,8 +492,10 @@ class RenderJob:
                     seed = (int(preset["seed"]) + b) if preset["seed_mode"] == "fixed" else random.randrange(1, 2 ** 31)
                     self._set(phase=f"{label} - {preset['model']}", current=text[:80])
                     try:
+                        start = it.get("image") or ""
                         opts = {"aspect_ratio": preset.get("aspect_ratio", ""), "resolution": preset.get("resolution", ""),
-                                "width": w, "height": h, "quality": preset.get("quality", ""), "extra": preset.get("extra") or {}}
+                                "width": w, "height": h, "quality": preset.get("quality", ""), "extra": preset.get("extra") or {},
+                                "image": start if preset.get("start_frame") and os.path.isfile(start) else ""}
                         for k, (data, ext) in enumerate(image_apis.generate(preset["backend"], text, seed, preset["model"], opts, key)):
                             path = os.path.join(out_dir, f"{key_p}_{seed}_{k}{ext}")
                             with open(path, "wb") as fh:
@@ -498,6 +503,8 @@ class RenderJob:
                             rec = {"key": key_p, "prompt": text, "path": path, "seed": seed, "preset": preset["name"],
                                    "workflow": "", "backend": preset["backend"], "model": preset["model"],
                                    "made": _dt.datetime.now().isoformat(timespec="seconds"), "card": it.get("card", "")}
+                            if opts["image"]:
+                                rec["start_frame"] = opts["image"]
                             with open(INDEX, "a", encoding="utf-8") as fh:
                                 fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
                             with self.lock:

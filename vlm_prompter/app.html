@@ -429,6 +429,13 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
 .rlaybox.txt { border-color:#2fd3ff; }
 .rlaybox span { position:absolute; top:-1px; left:-1px; background:#ff3b6b; color:#fff; font:600 10px/14px system-ui; padding:0 4px; border-radius:0 0 3px 0; }
 .rlaybox.txt span { background:#2fd3ff; color:#000; }
+
+/* video (Nov 23) */
+.card { position:relative; }
+.vbadge { position:absolute; left:6px; top:6px; background:rgba(0,0,0,.62); color:#fff; font-size:11px; line-height:18px; padding:0 6px; border-radius:9px; pointer-events:none; }
+.rthumb video { width:110px; height:110px; object-fit:cover; border-radius:6px; display:block; background:#111; }
+#viewer video { max-width:95vw; max-height:95vh; background:#000; }
+.rvvideo { width:100%; border-radius:6px; background:#000; }
 </style>
 </head>
 <body>
@@ -825,6 +832,8 @@ const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const thumb = (p, side = 256) => `/thumb?side=${side}&path=${encodeURIComponent(p)}`;
+const isVideo = p => /\.(mp4|webm|mov|m4v|mkv|avi)$/i.test(p || "");
+const media = p => `/media?path=${encodeURIComponent(p)}`;
 const base = p => p.split(/[\\/]/).pop();
 const fmtN = n => Number(n).toLocaleString();
 
@@ -1008,7 +1017,7 @@ function layoutGrid(force) {
   for (let v = first; v < last; v++) {
     const i = S.view[v], im = d.images[i], p = fullPath(i);
     html += `<div class="card${S.sel.has(i) ? " sel" : ""}${S.queued.has(p.toLowerCase()) ? " queued" : ""}" data-i="${i}" data-v="${v}" title="${esc(im.n)}">` +
-      `<img src="${thumb(p, side)}" alt="">${im.p ? '<span class="dot" title="already has a prompt file"></span>' : ""}<div class="nm">${esc(im.n)}</div></div>`;
+      `<img src="${thumb(p, side)}" alt="">${im.v ? '<span class="vbadge" title="video - the vision model sees it as a contact sheet of frames">&#9654;</span>' : ""}${im.p ? '<span class="dot" title="already has a prompt file"></span>' : ""}<div class="nm">${esc(im.n)}</div></div>`;
   }
   inner.innerHTML = html;
   const c = inner.firstElementChild;
@@ -1106,7 +1115,11 @@ function queueEvent(e) {
   else if (e.type === "click" && act === "redo") { it.redo = e.target.checked; e.target.closest(".redo").classList.toggle("on", it.redo); saveQueue(); updateRunLabel(); }
   else if (e.type === "input" && act === "prompt") { it.prompts[+e.target.dataset.k] = e.target.value; saveQueue(); $("#saveInfo").textContent = "edited prompts are saved with Save now"; }
 }
-function showImage(path) { const v = $("#viewer"); $("img", v).src = thumb(path, 1600); v.style.display = "flex"; }
+function showImage(path) {
+  const v = $("#viewer");
+  v.innerHTML = isVideo(path) ? `<video src="${media(path)}" controls autoplay loop onclick="event.stopPropagation()"></video>` : `<img alt="" src="${thumb(path, 1600)}">`;
+  v.style.display = "flex";
+}
 async function refreshQueueLists() {
   const d = await api("/api/queues");
   $("#qLists").innerHTML = `<option value="">Saved queues...</option><option value="__save__">＋ Save this queue under a name...</option>` +
@@ -1464,7 +1477,7 @@ function wire() {
    "#groupBy", "#combined", "#groupDir", "#dedupe", "#sidecar", "#recursive", "#onlyNew"].forEach(s => $(s).addEventListener("change", saveLocal));
   $("#whenceBtn").onclick = () => whence().catch(fail);
   $$("input[name=onExists]").forEach(r => r.addEventListener("change", () => { saveLocal(); previewNames().catch(() => {}); }));
-  $("#viewer").onclick = () => $("#viewer").style.display = "none";
+  $("#viewer").onclick = () => { $("#viewer").style.display = "none"; const vd = $("#viewer video"); if (vd) vd.pause(); };
   document.addEventListener("keydown", e => {
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName);
     if (e.key === "Escape") { if ($("#viewer").style.display === "flex") $("#viewer").style.display = "none"; else if (!typing) { S.sel.clear(); paintSel(); } }
@@ -1591,7 +1604,7 @@ function rvRenderDetail() {
     <div class="nav"><button data-nav="-1">◀</button><span class="muted">${pos + 1} / ${R.view.length}</span><button data-nav="1">▶</button>
       <label class="muted" style="margin-left:auto" title="Jump to the next render after giving stars"><input type="checkbox" id="rvAdvance" ${R.advance ? "checked" : ""}> next after stars</label></div>
     <div class="imgs">
-      <div><img src="${thumb(c.file, 1200)}" data-full="${esc(c.file)}" alt=""><div class="lbl">render · ${esc(c.name)}</div></div>
+      <div>${isVideo(c.file) ? `<video src="${media(c.file)}" poster="${thumb(c.file, 1200)}" controls loop muted playsinline class="rvvideo"></video>` : `<img src="${thumb(c.file, 1200)}" data-full="${esc(c.file)}" alt="">`}<div class="lbl">render · ${esc(c.name)}</div></div>
       <div>${rvSourceCol(c)}</div>
     </div>
     ${rvOriginPanel(c)}<div id="rvOriginCheck"></div>
@@ -1907,7 +1920,11 @@ const RN = {presets: [], workflows: [], strips: {}, polling: false, since: 0, ac
 const rbar = () => `<div class="rbar"><button class="rbtn" title="Render this prompt with the render preset chosen at the top (ComfyUI)">&#9654; render</button><span class="rstrip"></span></div>`;
 const normText = t => (t || "").split(/\s+/).filter(Boolean).join(" ");
 function rbarText(bar) { const el = bar.previousElementSibling; return el ? (el.tagName === "TEXTAREA" ? el.value : el.innerText) : ""; }
-function rnThumb(r) { return `<span class="rthumb"><a href="/thumb?side=2400&path=${encodeURIComponent(r.path)}" target="_blank" title="seed ${r.seed} - ${esc(r.preset)} - ${esc(r.made)}"><img src="${thumb(r.path, 220)}" alt=""></a><button class="rlay" data-layout="${esc(r.path)}" title="Ideogram layout: describe this render as Ideogram 4 JSON, with element boxes measured from the picture">&#9638;</button></span>`; }
+function rnThumb(r) { if (isVideo(r.path)) return rnThumbVideo(r); return `<span class="rthumb"><a href="/thumb?side=2400&path=${encodeURIComponent(r.path)}" target="_blank" title="seed ${r.seed} - ${esc(r.preset)} - ${esc(r.made)}"><img src="${thumb(r.path, 220)}" alt=""></a><button class="rlay" data-layout="${esc(r.path)}" title="Ideogram layout: describe this render as Ideogram 4 JSON, with element boxes measured from the picture">&#9638;</button></span>`; }
+function rnThumbVideo(r) {                           // video renders: poster, plays on hover, opens the file on click
+  return `<span class="rthumb"><a href="${media(r.path)}" target="_blank" title="seed ${r.seed} - ${esc(r.preset)} - ${esc(r.made)} - click to open"><video src="${media(r.path)}" poster="${thumb(r.path, 220)}" muted loop preload="none" playsinline
+    onmouseenter="this.play().catch(()=>{})" onmouseleave="this.pause()"></video></a><span class="vbadge">&#9654;</span></span>`;
+}
 async function rnLayout(path) {                       // render -> Ideogram 4 JSON with real boxes, ready to edit and render
   pmOpen(`<h3>Ideogram layout of this render</h3>
     <div style="display:flex;gap:14px;align-items:flex-start"><div class="rlaypic"><img src="${thumb(path, 720)}" alt=""><div id="rlayBoxes"></div></div>
@@ -1957,14 +1974,21 @@ async function rnLoadState() {
   if (d.current && RN.presets.some(p => p.name === d.current)) $("#rPreset").value = d.current;
   if (d.job && d.job.running) rnPoll();
 }
+function rnSourceOf(text) {                          // the picture a prompt was written from, when the page knows it
+  const k = normText(text);
+  for (const q of (S.queue || [])) if ((q.prompts || []).some(p => normText(typeof p === "string" ? p : p.text || "") === k)) return q.image;
+  try { for (const r of (RW.results || [])) if (normText(r.prompt) === k && r.image) return r.image; } catch {}
+  return "";
+}
 async function rnStart(items) {
   if (!$("#rPreset").value) { rnOpenSettings(); return toast("make a render preset first (Settings > Render presets)"); }
   const lp = (S.presets || []).find(x => x.id === $("#preset").value);
-  let r = await api("/api/render/start", {preset: $("#rPreset").value, items: items.map(t => ({text: t}))});
+  const its = items.map(t => ({text: t, image: rnSourceOf(t)}));     // the source image rides along (start frame)
+  let r = await api("/api/render/start", {preset: $("#rPreset").value, items: its});
   if (r.needs_confirm) {                              // a hosted image API bills per image: confirm first
     const cost = r.price ? `About $${r.estimate.toFixed(2)} (${r.images} x $${r.price}).` : "No price is set for this preset - check the service's pricing.";
-    if (!confirm(`Render ${r.images} image(s) with ${r.service} (${r.model})?\n\n${cost}`)) return;
-    r = await api("/api/render/start", {preset: $("#rPreset").value, items: items.map(t => ({text: t})), confirm_cost: true});
+    if (!confirm(`Render ${r.images} item(s) with ${r.service} (${r.model})?\n\n${cost}`)) return;
+    r = await api("/api/render/start", {preset: $("#rPreset").value, items: its, confirm_cost: true});
   }
   items.forEach(t => RN.active.add(normText(t))); rnPaint();
   rnPoll();
@@ -2061,9 +2085,11 @@ function rnShowPreset() {
     <div id="rpApi">
       <label class="setrow"><span>model</span><span id="rpModelBox"></span></label>
       <div id="rpCaps" class="rpcaps"></div>
-      <label class="setrow"><span>price per image (USD)</span><span><input type="number" id="rpPrice" min="0" step="0.001" value="${p.price || 0}" style="width:90px">
+      <label class="setrow"><span>price per image or clip (USD)</span><span><input type="number" id="rpPrice" min="0" step="0.001" value="${p.price || 0}" style="width:90px">
         <span class="muted" style="font-size:12px">from the service's pricing page - used for the cost check before each batch</span></span></label>
     </div>
+    <label class="setrow" id="rpStartRow"><span>start frame</span><span><label><input type="checkbox" id="rpStart" ${p.start_frame ? "checked" : ""}> use each prompt's source image as the first frame (image-to-video)</label>
+      <span class="muted" style="font-size:12px;display:block">For video models: the picture the prompt was written from starts the clip. Prompts without a known source image render from text.</span></span></label>
     <label class="setrow"><span>images per click</span><input type="number" id="rpBatch" min="1" max="8" value="${p.batch}" style="width:70px"></label>
     <label class="setrow" id="rpSeedRow"><span>seed</span><span><select id="rpSeedMode"><option value="random" ${p.seed_mode !== "fixed" ? "selected" : ""}>random each time</option><option value="fixed" ${p.seed_mode === "fixed" ? "selected" : ""}>fixed (compare prompt edits fairly)</option></select> <input type="number" id="rpSeed" value="${p.seed}" style="width:140px"></span></label>
     <div><button class="primary" id="rpSave">Save preset</button></div>`;
@@ -2148,7 +2174,8 @@ function rnShowPreset() {
       width: api_ ? (+(($("#rpAW") || {}).value) || 0) : (+$("#rpW").value || 0), height: api_ ? (+(($("#rpAH") || {}).value) || 0) : (+$("#rpH").value || 0),
       negative: api_ ? "" : $("#rpNeg").value.trim(), model: api_ ? rpModel() : "",
       quality: api_ && $("#rpQuality") ? $("#rpQuality").value : "", aspect_ratio: api_ && $("#rpRatio") ? $("#rpRatio").value : "",
-      resolution: api_ && $("#rpRes") ? $("#rpRes").value : "", extra, price: api_ ? (+$("#rpPrice").value || 0) : 0});
+      resolution: api_ && $("#rpRes") ? $("#rpRes").value : "", extra, price: api_ ? (+$("#rpPrice").value || 0) : 0,
+      start_frame: api_ && !!($("#rpStart") || {}).checked});
     toast("render preset saved: " + d.name); await rnLoadState(); $("#rPreset").value = d.name; rnOpenSettings();
   };
 }

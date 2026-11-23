@@ -108,11 +108,11 @@ def extract_json(text: str) -> str:
     return json.dumps(obj, ensure_ascii=False)
 
 
-def _messages(composed: Composed, data_uri: str) -> List[Dict[str, Any]]:
+def _messages(composed: Composed, data_uri: str, note: str = "") -> List[Dict[str, Any]]:
     return [
         {"role": "system", "content": composed.system},
         {"role": "user", "content": [
-            {"type": "text", "text": composed.user},
+            {"type": "text", "text": composed.user + ("\n\n" + note if note else "")},
             {"type": "image_url", "image_url": {"url": data_uri}},
         ]},
     ]
@@ -175,7 +175,8 @@ def generate_one(client: LMStudioClient, image_path: str, preset: Preset, compos
             log.write({**record_base, "error": result.error})
         return result
 
-    messages = _messages(composed, prepared.data_uri)
+    from .images import is_video, video_note
+    messages = _messages(composed, prepared.data_uri, video_note(image_path) if is_video(image_path) else "")
     try:
         chat = client.chat(params.model, messages, max_tokens=max_tokens, temperature=temperature,
                            top_p=top_p, seed=params.seed, reasoning=reasoning, caps=params.caps, sampling=sampling)

@@ -346,6 +346,28 @@ Instead of ComfyUI, a render preset can send prompts straight to a hosted image 
 
 Each service bills you directly and applies its own content rules.
 
+## Video
+
+Video runs through the whole bench, not as a separate mode.
+
+- **Viewing** - the gallery, the render strips under each prompt and Review all take video files (mp4, webm, mov,
+  m4v, mkv). Videos show a poster frame and a play badge; render strips play on hover; the viewer and Review's detail
+  panel play them with sound and seeking.
+- **Writing video prompts** - choose a video preset at the top and every mode writes video prompts: Describe, Photobash,
+  Ideas and Rewrite (for example converting a still prompt to a video prompt). Presets: **FLUX 3 Video** (text-to-video
+  and image-to-video), **LTX-2**, **MiniMax H3**, and **Wan 2.2** (text- and image-to-video). The FLUX 3, LTX and H3
+  presets end with a sound paragraph - ambience, effects tied to the action, music - and add dialogue only when the
+  picture shows someone speaking or you ask for it. Say *no audio* in the instructions to leave sound out.
+- **Reading a video** - a clip reaches the vision model as a contact sheet: six frames spread across it, numbered with
+  their time, with a note telling the model it is looking at a video. Describe a clip and the prompt follows what
+  happens over time; vision checks in Review judge video renders the same way.
+- **Rendering video** - ComfyUI workflows that save video (VideoHelperSuite *Video Combine* or the native video save
+  nodes) are picked up like images. Hosted: FLUX 3 video (Black Forest Labs: 5-20 s, hd to uhd, sound on or off, draft
+  mode), and any video model on fal.ai or Replicate (read model fills in its own duration, resolution and options).
+  A render preset can use **each prompt's source image as the start frame** (image-to-video); fal and Replicate models
+  receive it in whatever start-image field their schema has. Video services bill per second - type the price per clip
+  in the preset so the cost check before each batch is right.
+
 ## Presets
 
 | Preset | For | Output |

@@ -33,7 +33,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from PIL import Image
 
 from . import config
-from .images import is_image, natural_key
+from .images import is_image, is_media, natural_key
 from .outputs import prompt_sha, unique_path
 from .store import load_instructions
 
@@ -372,7 +372,7 @@ def load_folder(path: str, recursive: bool = True) -> Dict[str, Any]:
     for dirpath, dirnames, filenames in os.walk(path):
         dirnames[:] = sorted((d for d in dirnames if not d.startswith((".", "_"))), key=natural_key) if recursive else []
         for n in sorted(filenames, key=natural_key):
-            if is_image(n):
+            if is_media(n):
                 files.append(os.path.join(dirpath, n))
                 if len(files) >= FOLDER_LIMIT:
                     break
