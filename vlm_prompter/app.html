@@ -436,6 +436,8 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
 .rthumb video { width:110px; height:110px; object-fit:cover; border-radius:6px; display:block; background:#111; }
 #viewer video { max-width:95vw; max-height:95vh; background:#000; }
 .rvvideo { width:100%; border-radius:6px; background:#000; }
+
+.falbar { margin-top:6px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:12.5px; }
 </style>
 </head>
 <body>
@@ -2070,6 +2072,20 @@ async function rnShowMap() {
   $("#wfMapSave").onclick = async () => { const m = {}; document.querySelectorAll("#wfMap [data-role]").forEach(s => { if (s.value) m[s.dataset.role] = s.value.split("|"); });
     await api("/api/render/map", {name: n, mapping: m}); toast("mapping saved"); };
 }
+async function rnFalCatalog(refresh) {               // fal's live catalogue in the model field's suggestions
+  const cnt = $("#rpFalCount"); if (!cnt) return;
+  try {
+    if (!RN.falModels || refresh) { cnt.textContent = "reading fal's model list..."; RN.falModels = (await api(`/api/render/fal_models${refresh ? "?refresh=1" : ""}`)).models; }
+  } catch (e) { cnt.textContent = e.message; return; }
+  const fill = () => {
+    const c = $("#rpFalCat").value, list = RN.falModels.filter(m => !c || m.cat === c);
+    $("#rpModelList").innerHTML = list.map(m => `<option value="${esc(m.id)}" label="${esc(m.name)} - ${esc(m.cat.replace(/-/g, " "))}${m.date ? " - " + m.date : ""}">`).join("");
+    cnt.textContent = `${list.length} models - click the field or type a name to search, then read model`;
+  };
+  $("#rpFalCat").onchange = () => { fill(); $("#rpModelOther").focus(); };
+  $("#rpFalRefresh").onclick = e => { e.preventDefault(); rnFalCatalog(true); };
+  fill();
+}
 function rnShowPreset() {
   const p = RN.presets.find(x => x.name === $("#rpPick").value) || {name: "", backend: "comfyui", workflow: (RN.workflows[0] || {}).name || "", batch: 1, seed_mode: "random", seed: 0, width: 0, height: 0, negative: "", model: "", quality: "", price: 0, aspect_ratio: "", resolution: "", extra: {}};
   const PV = RN.providers || {};
@@ -2086,7 +2102,7 @@ function rnShowPreset() {
       <label class="setrow"><span>model</span><span id="rpModelBox"></span></label>
       <div id="rpCaps" class="rpcaps"></div>
       <label class="setrow"><span>price per image or clip (USD)</span><span><input type="number" id="rpPrice" min="0" step="0.001" value="${p.price || 0}" style="width:90px">
-        <span class="muted" style="font-size:12px">from the service's pricing page - used for the cost check before each batch</span></span></label>
+        <span class="muted" style="font-size:12px" id="rpPriceNote">from the service's pricing page - used for the cost check before each batch</span></span></label>
     </div>
     <label class="setrow" id="rpStartRow"><span>start frame</span><span><label><input type="checkbox" id="rpStart" ${p.start_frame ? "checked" : ""}> use each prompt's source image as the first frame (image-to-video)</label>
       <span class="muted" style="font-size:12px;display:block">For video models: the picture the prompt was written from starts the clip. Prompts without a known source image render from text.</span></span></label>
@@ -2111,6 +2127,14 @@ function rnShowPreset() {
     const ex = sameModel ? (p.extra || {}) : {};
     const sel = (id, list, cur, label, hint) => list.length ? `<label class="setrow"><span>${label}</span><span><select id="${id}">${list.map(x =>
       `<option ${x === cur ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>${hint ? ` <span class="muted" style="font-size:12px">${hint}</span>` : ""}</span></label>` : "";
+    if (caps.price && $("#rpPrice")) {              // fal publishes list prices: per image, or per second of video
+      const pr = caps.price, secs = pr.unit === "seconds";
+      const dur = +((((caps.fields || {}).duration || {}).default || "").toString().replace(/[^0-9.]/g, "")) || 5;
+      const clip = +(secs ? pr.unit_price * dur : pr.unit_price).toFixed(3);
+      if (!(+$("#rpPrice").value)) $("#rpPrice").value = clip;
+      $("#rpPriceNote").textContent = `fal list price: $${pr.unit_price} per ${secs ? "second" : (pr.unit || "image").replace(/s$/, "")}` +
+        (secs ? ` - about $${clip} for a ${dur} s clip; change the figure if you pick another duration` : "");
+    }
     const showWH = !(caps.ratios || []).length && (["wh", "none"].includes(caps.size) || caps.wh_object || caps.wh_fields);   // aspect-ratio models need no pixels
     const opts = {...(caps.options || {}), ...(caps.fields || {})};
     const optKeys = Object.keys(opts);
@@ -2146,8 +2170,12 @@ function rnShowPreset() {
     if (v.open) {
       $("#rpModelBox").innerHTML = `<input type="text" id="rpModelOther" list="rpModelList" value="${esc(p.backend === b ? p.model : "")}" placeholder="model id, e.g. ${esc((v.examples || [])[0] || "")}" style="width:320px">
         <datalist id="rpModelList">${(v.examples || []).map(x => `<option value="${esc(x)}">`).join("")}</datalist>
-        <button id="rpReadModel">read model</button> <span class="muted" style="font-size:12px">any model from the ${b === "fal" ? "fal.ai" : "Replicate"} catalogue</span>`;
+        <button id="rpReadModel">read model</button> <span class="muted" style="font-size:12px">any model from the ${b === "fal" ? "fal.ai" : "Replicate"} catalogue</span>
+        ${b === "fal" ? `<div class="falbar"><select id="rpFalCat"><option value="">all categories</option><option value="text-to-image">text to image</option>
+          <option value="text-to-video">text to video</option><option value="image-to-video">image to video (start frame)</option></select>
+          <span id="rpFalCount" class="muted"></span> <button id="rpFalRefresh" title="read fal's model list again (it is kept for a day)">refresh list</button></div>` : ""}`;
       $("#rpReadModel").onclick = e => { e.preventDefault(); loadCaps(); };
+      if (b === "fal") { rnFalCatalog(false); $("#rpModelOther").onchange = () => { if ($("#rpModelOther").value.trim()) loadCaps(); }; }
     } else {
       const models = [...(v.models || [])]; if (p.backend === b && p.model && !models.includes(p.model)) models.unshift(p.model);
       $("#rpModelBox").innerHTML = `<select id="rpModel">${models.map(m => `<option ${p.backend === b && m === p.model ? "selected" : ""}>${esc(m)}</option>`).join("")}</select>

@@ -240,7 +240,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/": self.page, "/audit": self.audit_page, "/report": self.report_page, "/library": self.library_page,
                 "/media": self.media,
                 "/api/pools": self.pools_list, "/api/pools/load": self.pools_load,
-                "/api/render/providers": self.r_providers, "/api/render/caps": self.r_caps,
+                "/api/render/providers": self.r_providers, "/api/render/caps": self.r_caps, "/api/render/fal_models": self.r_fal_models,
                 "/asset": self.asset,
                 "/api/library": self.library_api, "/api/library/forensics": self.library_forensics, "/api/lessons": self.lessons_list,
                 "/api/grade_suggestions": self.grade_suggestions, "/api/state": self.state,
@@ -904,6 +904,16 @@ class Handler(BaseHTTPRequestHandler):
         if r.error or not r.prompts:
             return self._error(r.error or "the model returned nothing")
         self._json({"prompt": r.prompts[0], "model": api_id})
+
+    def r_fal_models(self, q):
+        from . import image_apis
+        key = (config.load_settings().get("api_keys") or {}).get("fal", "")
+        try:
+            self._json(image_apis.fal_catalog(key, refresh=q.get("refresh") == "1"))
+        except image_apis.ApiError as e:
+            self._error(str(e))
+        except Exception as e:
+            self._error(f"could not read fal's model list: {e}")
 
     def r_caps(self, q):
         from . import image_apis

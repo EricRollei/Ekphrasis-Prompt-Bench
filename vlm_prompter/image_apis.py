@@ -29,6 +29,7 @@ from __future__ import annotations
 import base64
 import json
 import math
+import os
 import time
 import urllib.error
 import urllib.parse
@@ -418,6 +419,55 @@ def caps_from_schema(props: Dict[str, Any], root: Dict[str, Any]) -> Dict[str, A
 _SCHEMA_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 
 
+FAL_CATEGORIES = {"text-to-image": "Text to image", "text-to-video": "Text to video", "image-to-video": "Image to video"}
+
+
+def fal_catalog(key: str, refresh: bool = False) -> Dict[str, Any]:
+    """fal's live model list for the picker - active models in FAL_CATEGORIES, cached for a day in .cache/."""
+    import json as _json
+    from . import config
+    path = os.path.join(config.CACHE_DIR, "fal_models.json")
+    if not refresh and os.path.isfile(path) and time.time() - os.path.getmtime(path) < 86400:
+        with open(path, encoding="utf-8") as fh:
+            return _json.load(fh)
+    if not key:
+        raise ApiError("add your fal key in Settings > Image APIs first - it is needed to read fal's model list")
+    head = {"Authorization": f"Key {key}"}
+    models: List[Dict[str, Any]] = []
+    for cat in FAL_CATEGORIES:
+        cursor = ""
+        for _ in range(40):                                    # 50 per page; ~200 per category today
+            d = _http("GET", f"https://api.fal.ai/v1/models?category={cat}&limit=50"
+                      + (f"&cursor={urllib.parse.quote(cursor)}" if cursor else ""), head, timeout=40)
+            for m in (d.get("models") or []) if isinstance(d, dict) else []:
+                md = m.get("metadata") or {}
+                if md.get("status", "active") != "active":
+                    continue
+                models.append({"id": m.get("endpoint_id", ""), "name": md.get("display_name") or m.get("endpoint_id", ""),
+                               "cat": cat, "desc": (md.get("description") or "")[:200], "date": (md.get("date") or "")[:10]})
+            if not (isinstance(d, dict) and d.get("has_more") and d.get("next_cursor")):
+                break
+            cursor = d["next_cursor"]
+    models.sort(key=lambda m: m["date"], reverse=True)                     # newest first ...
+    models.sort(key=lambda m: list(FAL_CATEGORIES).index(m["cat"]))        # ... within each category (stable sort)
+    out = {"fetched": time.time(), "models": models}
+    os.makedirs(config.CACHE_DIR, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        _json.dump(out, fh)
+    return out
+
+
+def fal_price(key: str, model: str) -> Optional[Dict[str, Any]]:
+    """fal's list price for one endpoint: {"unit_price": 0.07, "unit": "seconds"} - or None."""
+    try:
+        d = _http("GET", "https://api.fal.ai/v1/models/pricing?endpoint_id=" + urllib.parse.quote(model, safe="/"),
+                  {"Authorization": f"Key {key}"}, timeout=20)
+        p = (d.get("prices") or [None])[0] if isinstance(d, dict) else None
+        return {"unit_price": float(p["unit_price"]), "unit": p.get("unit", ""), "currency": p.get("currency", "USD")} if p else None
+    except Exception:
+        return None
+
+
 def fal_caps(model: str) -> Dict[str, Any]:
     hit = _SCHEMA_CACHE.get("fal:" + model)
     if hit and time.time() - hit[0] < 3600:
@@ -573,7 +623,12 @@ def model_caps(backend: str, model: str, key: str = "") -> Dict[str, Any]:
     if backend not in PROVIDERS:
         raise ApiError(f"unknown image API: {backend}")
     if backend == "fal":
-        return fal_caps(model)
+        caps = dict(fal_caps(model))
+        if key:
+            price = fal_price(key, model)
+            if price:
+                caps["price"] = price
+        return caps
     if backend == "replicate":
         if not key:
             raise ApiError("add your Replicate token in Settings > Image APIs first - it is needed to read the model")

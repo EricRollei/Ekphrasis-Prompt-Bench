@@ -363,7 +363,9 @@ Video runs through the whole bench, not as a separate mode.
   happens over time; vision checks in Review judge video renders the same way.
 - **Rendering video** - ComfyUI workflows that save video (VideoHelperSuite *Video Combine* or the native video save
   nodes) are picked up like images. Hosted: FLUX 3 video (Black Forest Labs: 5-20 s, hd to uhd, sound on or off, draft
-  mode), and any video model on fal.ai or Replicate (read model fills in its own duration, resolution and options).
+  mode), and any video model on fal.ai or Replicate (read model fills in its own duration, resolution and options). For
+  fal, the model field lists fal's whole current catalogue - text-to-image, text-to-video and image-to-video, newest
+  first, refreshed daily - and reading a model fills in fal's list price (per image, or per second for video).
   A render preset can use **each prompt's source image as the start frame** (image-to-video); fal and Replicate models
   receive it in whatever start-image field their schema has. Video services bill per second - type the price per clip
   in the preset so the cost check before each batch is right.
