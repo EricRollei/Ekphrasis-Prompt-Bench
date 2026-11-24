@@ -515,7 +515,8 @@ body.mode-ideas #idPane { grid-template-columns:minmax(440px, 660px) 1fr; }
       <button id="selAll" title="Select every image shown (Ctrl+A)">all</button>
       <button id="selNone" title="Clear the selection (Esc)">none</button>
       <button class="primary" id="addSel" disabled>+ Add selected</button>
-      <input type="text" id="filter" placeholder="filter names" style="width:130px">
+      <input type="text" id="filter" placeholder="filter names" style="width:130px" title="Filter by file name - with subfolders on, a folder name works too">
+      <label class="muted" title="Show the images in every subfolder too, all at once (up to 50,000)"><input type="checkbox" id="deep"> subfolders</label>
       <span class="muted" style="margin-left:auto">size</span>
       <input type="range" id="tw" min="90" max="320" value="150">
     </div>
@@ -958,7 +959,7 @@ function showHome() {
   $("#gridInfo").textContent = "open a folder on the left";
 }
 async function browse(path, keep = false) {
-  const d = await api(`/api/ls?path=${encodeURIComponent(path)}`);
+  const d = await api(`/api/ls?path=${encodeURIComponent(path)}&deep=${$("#deep").checked ? 1 : 0}`);
   if (d.error) { toast("⚠ " + d.error, 5000); return; }
   const scroll = keep ? $("#grid").scrollTop : 0;
   S.browse = d;
@@ -980,6 +981,11 @@ async function browse(path, keep = false) {
   if (d.images.length && !S.recent.includes(d.path)) S.recent = [d.path, ...S.recent].slice(0, 12);
   saveLocal();
 }
+try { $("#deep").checked = localStorage.getItem("vlmp_deep") === "1"; } catch {}
+$("#deep").onchange = () => {
+  try { localStorage.setItem("vlmp_deep", $("#deep").checked ? "1" : "0"); } catch {}
+  if (S.browse && S.browse.path) browse(S.browse.path).catch(fail);
+};
 const fullPath = i => S.browse.path.replace(/[\\/]+$/, "") + S.browse.sep + S.browse.images[i].n;
 
 /* ------------------------------------------------------------------ gallery: virtual grid (only visible rows exist) */
@@ -988,7 +994,8 @@ function applyFilter() {
   const f = ($("#filter").value || "").trim().toLowerCase();
   S.view = f ? d.images.map((im, i) => im.n.toLowerCase().includes(f) ? i : -1).filter(i => i >= 0) : d.images.map((_, i) => i);
   S.queued = new Set(S.queue.map(q => q.image.toLowerCase()));
-  $("#gridInfo").innerHTML = `${f ? fmtN(S.view.length) + " of " : ""}${fmtN(d.images.length)} images in <b>${esc(base(d.path.replace(/[\\/]+$/, "")) || d.path)}</b>`;
+  $("#gridInfo").innerHTML = `${f ? fmtN(S.view.length) + " of " : ""}${fmtN(d.images.length)} images in <b>${esc(base(d.path.replace(/[\\/]+$/, "")) || d.path)}</b>` +
+    (d.deep ? ` <span class="muted">incl. subfolders${d.truncated ? " - stopped at 50,000, open a subfolder for the rest" : ""}</span>` : "");
   $("#gridInfo").title = d.path;
 }
 const G = { first: -1, last: -1, rowH: 0, cols: 1, cw: 150, measured: {}, raf: 0 };
@@ -1018,8 +1025,8 @@ function layoutGrid(force) {
   let html = "";
   for (let v = first; v < last; v++) {
     const i = S.view[v], im = d.images[i], p = fullPath(i);
-    html += `<div class="card${S.sel.has(i) ? " sel" : ""}${S.queued.has(p.toLowerCase()) ? " queued" : ""}" data-i="${i}" data-v="${v}" title="${esc(im.n)}">` +
-      `<img src="${thumb(p, side)}" alt="">${im.v ? '<span class="vbadge" title="video - the vision model sees it as a contact sheet of frames">&#9654;</span>' : ""}${im.p ? '<span class="dot" title="already has a prompt file"></span>' : ""}<div class="nm">${esc(im.n)}</div></div>`;
+    html += `<div class="card${S.sel.has(i) ? " sel" : ""}${S.queued.has(p.toLowerCase()) ? " queued" : ""}" data-i="${i}" data-v="${v}" title="${esc(im.n)}${im.n.includes(S.browse.sep) ? "\n" + esc(p) : ""}">` +
+      `<img src="${thumb(p, side)}" alt="">${im.v ? '<span class="vbadge" title="video - the vision model sees it as a contact sheet of frames">&#9654;</span>' : ""}${im.p ? '<span class="dot" title="already has a prompt file"></span>' : ""}<div class="nm">${esc(base(im.n))}</div></div>`;
   }
   inner.innerHTML = html;
   const c = inner.firstElementChild;

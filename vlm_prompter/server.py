@@ -148,7 +148,24 @@ def _drives() -> List[str]:
     return [f"{d}:\\" for d in string.ascii_uppercase if os.path.exists(f"{d}:\\")]
 
 
-def _ls(path: str, suffix: str, json_suffix: str = ".prompt.json") -> Dict:
+DEEP_LIMIT = 50000                                   # gallery 'subfolders': stop walking after this many files
+
+
+def _media_row(name: str, rel: str, names: set, suffix: str, json_suffix: str) -> Dict:
+    """slim gallery row: n = name (relative path in deep mode), p = has a prompt file (1/0), v = video"""
+    stem = os.path.splitext(name)[0]
+    has = (stem + suffix).lower() in names or (stem + json_suffix).lower() in names
+    row = {"n": rel, "p": 1 if has else 0}
+    if is_video(name):
+        row["v"] = 1
+    return row
+
+
+def _skip_dir(name: str) -> bool:
+    return name.startswith(("$", ".")) or name == "System Volume Information"
+
+
+def _ls(path: str, suffix: str, json_suffix: str = ".prompt.json", deep: bool = False) -> Dict:
     path = os.path.abspath(path.strip().strip('"').strip("'"))
     select = ""
     if os.path.isfile(path):                     # a pasted file path opens its folder with the file selected
@@ -162,20 +179,30 @@ def _ls(path: str, suffix: str, json_suffix: str = ".prompt.json") -> Dict:
     for e in sorted(entries, key=lambda e: natural_key(e.name)):
         try:
             if e.is_dir():
-                if not e.name.startswith(("$", ".")) and e.name != "System Volume Information":
+                if not _skip_dir(e.name):
                     dirs.append({"name": e.name, "path": e.path})
-            elif is_media(e.name):                  # slim rows: n = name, p = has a prompt file (1/0), v = video
-                stem = os.path.splitext(e.name)[0]
-                has = (stem + suffix).lower() in names or (stem + json_suffix).lower() in names
-                row = {"n": e.name, "p": 1 if has else 0}
-                if is_video(e.name):
-                    row["v"] = 1
-                images.append(row)
+            elif is_media(e.name):
+                images.append(_media_row(e.name, e.name, names, suffix, json_suffix))
         except OSError:
             continue
+    truncated = False
+    if deep:                                         # every subfolder too; names become paths relative to this folder
+        for sub in dirs:
+            for root, subdirs, files in os.walk(sub["path"]):
+                subdirs[:] = sorted((d for d in subdirs if not _skip_dir(d)), key=natural_key)
+                lower = {f.lower() for f in files}
+                rel_root = os.path.relpath(root, path)
+                for f in sorted(files, key=natural_key):
+                    if is_media(f):
+                        images.append(_media_row(f, os.path.join(rel_root, f), lower, suffix, json_suffix))
+                if len(images) >= DEEP_LIMIT:
+                    truncated = True
+                    break
+            if truncated:
+                break
     parent = os.path.dirname(path)
     return {"path": path, "sep": os.sep, "parent": parent if parent != path else "", "dirs": dirs, "images": images,
-            "select": select}
+            "select": select, "deep": deep, "truncated": truncated}
 
 
 def _read_json(path: str, default: Any) -> Any:
@@ -393,7 +420,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def ls(self, q):
         s = config.load_settings()
-        result = _ls(q.get("path") or _drives()[0], s["per_image_suffix"], s["per_image_suffix_json"])
+        result = _ls(q.get("path") or _drives()[0], s["per_image_suffix"], s["per_image_suffix_json"], deep=q.get("deep") == "1")
         if not result.get("error") and result["images"]:
             with SETTINGS_LOCK:
                 s = config.load_settings()
